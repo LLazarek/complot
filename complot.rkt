@@ -103,12 +103,14 @@ Some things to think about:
 
 (struct axis (label
               ticks?
-              num-ticks ; todo
+              major-ticks-every
+              minor-ticks-between-major
               tick-lines?
               min
               max
               layout ; todo
-              ))
+              ensure-min-tick?
+              ensure-max-tick?))
 (struct x-axis axis ())
 (struct y-axis axis ())
 (struct legend (position))
@@ -154,20 +156,44 @@ Some things to think about:
 
 (define (make-x-axis #:label [label #f]
                      #:ticks? [ticks? #t]
-                     #:num-ticks [num-ticks 'auto]
+                     #:major-tick-every [major-tick-every 'auto]
+                     #:minor-ticks-between-major [minor-ticks-between-major 'auto]
+                     #:ensure-min-tick? [ensure-min-tick? #t]
+                     #:ensure-max-tick? [ensure-max-tick? #t]
                      #:tick-lines? [tick-lines? #f]
                      #:layout [layout 'linear]
                      #:min [min #f]
                      #:max [max #f])
-  (x-axis label ticks? num-ticks tick-lines? min max layout))
+  (x-axis label
+          ticks?
+          major-tick-every
+          minor-ticks-between-major
+          tick-lines?
+          min
+          max
+          layout
+          ensure-min-tick?
+          ensure-max-tick?))
 (define (make-y-axis #:label [label #f]
                      #:ticks [ticks? #t]
-                     #:num-ticks [num-ticks 'auto]
+                     #:major-tick-every [major-tick-every 'auto]
+                     #:minor-ticks-between-major [minor-ticks-between-major 'auto]
+                     #:ensure-min-tick? [ensure-min-tick? #t]
+                     #:ensure-max-tick? [ensure-max-tick? #t]
                      #:tick-lines? [tick-lines? #f]
                      #:layout [layout 'linear]
                      #:min [min #f]
                      #:max [max #f])
-  (y-axis label ticks? num-ticks tick-lines? min max layout))
+  (y-axis label
+          ticks?
+          major-tick-every
+          minor-ticks-between-major
+          tick-lines?
+          min
+          max
+          layout
+          ensure-min-tick?
+          ensure-max-tick?))
 (define (make-legend #:position [position 'auto])
   (legend position))
 
@@ -342,16 +368,35 @@ Some things to think about:
              (values (or (axis-min an-axis) inferred-min)
                      (or (axis-max an-axis) inferred-max)
                      categorical?)]))
+    (define extra-min-max-ticks
+      (append (if (axis-ensure-min-tick? an-axis)
+                  (list the-min)
+                  empty)
+              (if (axis-ensure-max-tick? an-axis)
+                  (list the-max)
+                  empty)))
     (list the-min
           the-max
-          (list (make-plot:axis (if (and (axis-ticks? an-axis)
-                                         (not categorical?))
-                                    (plot:ticks-generate (plot:linear-ticks)
-                                                         the-min
-                                                         the-max)
-                                    ;; either categorical? is true, so we need the axis, but since it's categorical we leave it up to plot's internal handling above in render
-                                    ;; otherwise we don't need the ticks at all
-                                    empty))
+          (list (make-plot:axis
+                 (if (and (axis-ticks? an-axis)
+                          (not categorical?))
+                     (plot:ticks-generate
+                      (plot:ticks-add
+                       (match* {(axis-major-ticks-every an-axis) (axis-minor-ticks-between-major an-axis)}
+                         [{'auto _} (plot:linear-ticks)]
+                         [{n 0}
+                          (plot:linear-ticks
+                           #:number (quotient (- the-max the-min) n)
+                           #:divisors '(1))]
+                         [{n 'auto}
+                          (plot:linear-ticks
+                           #:number (quotient (- the-max the-min) n))])
+                       extra-min-max-ticks)
+                      the-min
+                      the-max)
+                     ;; either categorical? is true, so we need the axis, but since it's categorical we leave it up to plot's internal handling above in render
+                     ;; otherwise we don't need the ticks at all
+                     empty))
                 (if (axis-tick-lines? an-axis)
                     (if (x-axis? an-axis)
                         (plot:x-tick-lines)
@@ -453,4 +498,14 @@ Some things to think about:
                                5 26.34 "kinda"))
                 (make-histogram #:x "ok?")
                 (make-x-axis)
-                (make-y-axis))))
+                (make-y-axis)))
+  (render (with (graph (row-df [date price ok?]
+                               1 20.50 "yes"
+                               2 22 "no"
+                               3 20 "no"
+                               4 23 "no"
+                               4 23 "yes"
+                               5 26.34 "kinda"))
+                (make-histogram #:x "ok?")
+                (make-x-axis)
+                (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))))
