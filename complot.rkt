@@ -1,8 +1,7 @@
 #lang at-exp racket
 
-(provide graph
-         with
-         (rename-out [make-x-axis        x-axis]
+(provide (rename-out [make-plot          plot]
+                     [make-x-axis        x-axis]
                      [make-y-axis        y-axis]
                      [make-legend        legend]
                      [make-point-label   point-label]
@@ -12,7 +11,11 @@
                      [make-stacked-bars  stacked-bars]
                      [make-histogram     histogram]
                      [make-function      function])
-         describe)
+         with
+         describe
+         read-data
+         describe
+         render)
 
 (require "structs.rkt"
          "renderer-conversion.rkt"
@@ -88,13 +91,14 @@
 (define (render thing)
   (match thing
     [(? plot? p) (render-plot p)]
-    [(? x-axis? a) (render-plot (with (graph (row-df [dummy] 0)) a)
+    [(? x-axis? a) (render-plot (with (make-plot (row-df [dummy] 0)) a)
                                 #:height 40)]
-    [(? y-axis? a) (render-plot (with (graph (row-df [dummy] 0)) a)
+    [(? y-axis? a) (render-plot (with (make-plot (row-df [dummy] 0)) a)
                                 #:width 40)]
-    [(? renderer? r) (render-plot (with (graph ;; some arbitrary data that will
-                                               ;; illustrate the different kinds
-                                               ;; of renderers
+    [(? renderer? r) (render-plot (with (make-plot
+                                         ;; some arbitrary data that will
+                                         ;; illustrate the different kinds
+                                         ;; of renderers
                                          (row-df [x y]
                                                  1 2
                                                  2 2
@@ -130,89 +134,89 @@
 
 (module+ test
   (begin0 (void)
-    (render (graph (row-df [date price]
-                           1 20.50
-                           2 22
-                           3 20
-                           4 23
-                           5 26.34)))
-    (render (with (graph (row-df [date price]
-                                 1 20.50
-                                 2 22
-                                 3 20
-                                 4 23
-                                 5 26.34))
+    (render (make-plot (row-df [date price]
+                               1 20.50
+                               2 22
+                               3 20
+                               4 23
+                               5 26.34)))
+    (render (with (make-plot (row-df [date price]
+                                     1 20.50
+                                     2 22
+                                     3 20
+                                     4 23
+                                     5 26.34))
                   (make-points #:x "date" #:y "price" #:alpha 1)
                   (make-x-axis #:min 0 #:max 5)
                   (make-y-axis #:min 0 #:max 30)))
-    (render (with (graph (row-df [date price]
-                                 1 20.50
-                                 2 22
-                                 3 20
-                                 4 23
-                                 5 26.34))
+    (render (with (make-plot (row-df [date price]
+                                     1 20.50
+                                     2 22
+                                     3 20
+                                     4 23
+                                     5 26.34))
                   (make-points #:x "date" #:y "price" #:alpha 1)
                   (make-line #:x "date" #:y "date")
                   (make-y-axis #:min 0 #:max 30)))
-    (render (with (graph (row-df [date price ok?]
-                                 1 20.50 "yes"
-                                 2 22 "no"
-                                 3 20 "no"
-                                 4 23 "no"
-                                 4 23 "yes"
-                                 5 26.34 "kinda"))
+    (render (with (make-plot (row-df [date price ok?]
+                                     1 20.50 "yes"
+                                     2 22 "no"
+                                     3 20 "no"
+                                     4 23 "no"
+                                     4 23 "yes"
+                                     5 26.34 "kinda"))
                   (make-histogram #:x "ok?")
                   (make-x-axis)
                   (make-y-axis)))
-    (render (with (graph (row-df [date price ok?]
-                                 1 20.50 "yes"
-                                 2 22 "no"
-                                 3 20 "no"
-                                 4 23 "no"
-                                 4 23 "yes"
-                                 5 26.34 "kinda"))
+    (render (with (make-plot (row-df [date price ok?]
+                                     1 20.50 "yes"
+                                     2 22 "no"
+                                     3 20 "no"
+                                     4 23 "no"
+                                     4 23 "yes"
+                                     5 26.34 "kinda"))
                   (make-histogram #:x "ok?")
                   (make-x-axis)
                   (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0)))
-    (render (with (graph (row-df [date price ok?]
-                                 1 20.50 "yes"
-                                 2 22 "no"
-                                 3 20 "no"
-                                 4 23 "no"
-                                 4 23 "yes"
-                                 5 26.34 "kinda"))
+    (render (with (make-plot (row-df [date price ok?]
+                                     1 20.50 "yes"
+                                     2 22 "no"
+                                     3 20 "no"
+                                     4 23 "no"
+                                     4 23 "yes"
+                                     5 26.34 "kinda"))
                   (make-histogram #:x "ok?")
                   (make-x-axis)
                   (make-y-axis #:min 0 #:major-tick-every #f
                                #:minimum-ticks '(1 1.5)
                                #:ensure-max-tick? #f
                                #:ensure-min-tick? #f)))
-    (render (with (graph (row-df [major minor money]
-                                 "expenses" "food" 20
-                                 "expenses" "transport" 30
-                                 "expenses" "laundry" 10
-                                 "expenses" "laundry" 5
-                                 "income" "paycheck" 100
-                                 "income" "side-job" 10))
+    (render (with (make-plot (row-df [major minor money]
+                                     "expenses" "food" 20
+                                     "expenses" "transport" 30
+                                     "expenses" "laundry" 10
+                                     "expenses" "laundry" 5
+                                     "income" "paycheck" 100
+                                     "income" "side-job" 10))
                   (make-stacked-bars #:category "major"
                                      #:subcategory "minor"
                                      #:value "money"
                                      #:labels? #f)
                   (make-x-axis)
                   (make-y-axis #:min 0)))
-    (render (with (graph (row-df [major minor money]
-                                 "expenses" "food" 20
-                                 "expenses" "transport" 30
-                                 "expenses" "laundry" 10
-                                 "expenses" "laundry" 5
-                                 "income" "paycheck" 100
-                                 "income" "side-job" 10))
+    (render (with (make-plot (row-df [major minor money]
+                                     "expenses" "food" 20
+                                     "expenses" "transport" 30
+                                     "expenses" "laundry" 10
+                                     "expenses" "laundry" 5
+                                     "income" "paycheck" 100
+                                     "income" "side-job" 10))
                   (make-stacked-bars #:category "major"
                                      #:subcategory "minor"
                                      #:value "money")
                   (make-x-axis)
                   (make-y-axis #:min 0)))
-    (render (with (graph (row-df [a] 5))
+    (render (with (make-plot (row-df [a] 5))
                   (make-function (λ (x) (expt 2 x))
                                  #:min 1 #:max 100)
                   (make-x-axis #:min 1 #:max 100)

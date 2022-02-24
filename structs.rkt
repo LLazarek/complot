@@ -19,7 +19,7 @@
          plot-set
          plot-update
 
-         graph
+         make-plot
          make-x-axis
          make-y-axis
          make-legend
@@ -73,7 +73,7 @@
   #:with get-field (format-id this-syntax "plot-~a" #'field)
   (struct-copy plot a-plot [field (f v (get-field a-plot))]))
 
-(define (graph data)
+(define (make-plot data)
   (plot data #f #f #f #f empty))
 
 (define (make-x-axis #:label [label #f]
