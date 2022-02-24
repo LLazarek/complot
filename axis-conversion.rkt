@@ -121,6 +121,8 @@
         [(list (list _ (? (negate real?) ys)) ...)
          #:when (not x?)
          (list 0 (length ys) #t)])))
-  (values (apply min (map first mins+maxes+categorical?))
-          (apply max (map second mins+maxes+categorical?))
-          (andmap third mins+maxes+categorical?)))
+  (if (empty? mins+maxes+categorical?)
+      (values 0 1 #f) ;; Just use some dummy bounds
+      (values (apply min (map first mins+maxes+categorical?))
+              (apply max (map second mins+maxes+categorical?))
+              (andmap third mins+maxes+categorical?))))
