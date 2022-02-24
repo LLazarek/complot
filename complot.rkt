@@ -6,8 +6,8 @@ todo
 - ✓ Support legends
 - ✓ Support axis transformations (e.g. log scale)
 - Support displaying sub-pieces of a graph (e.g. an axis by itself)
-- Add data primitives
-- Add a primitive for saving plots to file
+- ✓ Add data primitives
+- ✓ Add a primitive for saving plots to file
 - Start the gui
 |#
 
@@ -22,7 +22,8 @@ todo
                      [make-bars          bars]
                      [make-stacked-bars  stacked-bars]
                      [make-histogram     histogram]
-                     [make-function      function]))
+                     [make-function      function])
+         describe)
 
 (require "structs.rkt"
          "renderer-conversion.rkt"
@@ -30,7 +31,8 @@ todo
          "util.rkt"
          (prefix-in plot: plot)
          (prefix-in graphite: graphite)
-         sawzall)
+         sawzall
+         data-frame)
 
 (define (with a-plot . things)
   (define (with-one a-plot a-thing)
@@ -53,7 +55,7 @@ todo
 
 (define (snoc x l) (append l (list x)))
 
-(define (render a-plot)
+(define (render a-plot [outpath #f])
   (match-define (plot data x-axis y-axis legend title renderers) a-plot)
   (match-define (list x-min x-max x-axis-plot:renderers)
     (if x-axis
@@ -86,7 +88,17 @@ todo
                #:legend-anchor (if legend
                                    (if-auto (legend-position legend)
                                             (plot:plot-legend-anchor))
-                                   (plot:plot-legend-anchor)))))
+                                   (plot:plot-legend-anchor))
+               #:out-file outpath)))
+
+(define (read-data path)
+  (df-read/csv path))
+(define (describe data)
+  (define col-names (df-series-names data))
+  (displayln @~a{
+                 Data frame with @(length col-names) columns and @(df-row-count data) rows.
+                 Columns: @(string-join (map ~s col-names) ", ")
+                 }))
 
 (module+ test
   (require sawzall)
