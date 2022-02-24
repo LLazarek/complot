@@ -1,79 +1,14 @@
 #lang at-exp racket
 
 #|
-Choices:
-- support plotting multiple different variables on the same plot, sharing an axis?
-  + if yes, want sth like plot1
-  + if no, want sth like plot2
-
-Examples:
-
----------- design 1 ----------
-(plot1 (line data #:x x-col #:y y-col #:color "red")
-       (points data #:x x-col #:y y-col #:color "purple")
-       (point-label 55 70 "foobar")
-       (x-axis #:min 0 #:ticks 10 #:label x-col) ; perhaps kind of annoying, but flexible
-       (y-axis #:min 0 #:max 100 #:label y-col)  ; if an axis isn't given, it doesn't show up in the plot
-
-       (line data #:x x-col #:y other-y-col)
-       (y-axis #:far #t))
-
-(plot1 (histogram data #:x col #:bins 20))
-
-
----------- design 2 ----------
-(plot2 data
-       #:x x-col
-       #:y y-col
-       (points)
-       (x-axis #:min 0) ; axis name if not specified can default to `x-col`
-       (y-axis #:min 0 #:max 100 #:label "the Y"))
-(plot2 data
-       #:x x-col
-       #:y y-col
-       (points)) ; this can have default x and y axes that use `x-col` and `y-col`
-(plot2 data
-       #:x x-col
-       #:y y-col
-       (points)
-       (no-x-axis)) ; and this can remove the default x-axis
-
-
----------- design 3 ----------
-(define base-plot (plot3 data
-                         #:x x-col
-                         #:y y-col
-                         (points))) ; produces a plot data structure
-(render (remove-axis base-plot #:x #:y))
-(define plot+x (set-axis base-plot #:x (x-axis #:min 0 #:label "some stuff")))
-(render plot+x)
-(define plot+x/lines (add-viz plot+x (lines #:color "red")))
-
-(~> (plot3 data
-           #:x x-col
-           #:y y-col
-           (points))
-    (set-axis #:x (x-axis #:min 0 #:label "some stuff" #:ticks 20))
-    (add-viz (lines #:color "red")))
-
-
-
-I think plot1 is flexible enough to be the basis, with plot2 as a layer on top.
-
-
----------- design 4 ----------
-(define canvas (plot4 data)) ; produces a plot data structure
-(define base-plot (with canvas (points #:x "date" #:y "price")))
-(define plot+x (with base-plot (x-axis #:min 0 #:label "some stuff")))
-(render plot+x)
-(define plot+x/lines (with plot+x (line #:x "date" #:y "profit" #:color "red")))
-
-
-
-Some things to think about:
-- dealing with N/As in the data
-  + what does graphite do?
-
+todo
+- ✓ Support stacked bar graphs
+- ✓ Support legends
+- ✓ Support axis transformations (e.g. log scale)
+- Support displaying sub-pieces of a graph (e.g. an axis by itself)
+- Add data primitives
+- Add a primitive for saving plots to file
+- Start the gui
 |#
 
 (provide graph
@@ -86,10 +21,12 @@ Some things to think about:
                      [make-line          line]
                      [make-bars          bars]
                      [make-stacked-bars  stacked-bars]
-                     [make-histogram     histogram]))
+                     [make-histogram     histogram]
+                     [make-function      function]))
 
 (require (prefix-in plot: plot)
          (prefix-in graphite: graphite)
+         sawzall
          syntax/parse/define
          (for-syntax racket/syntax)
          data-frame
@@ -122,10 +59,11 @@ Some things to think about:
 (struct points renderer (x-col y-col))
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col))
-(struct stacked-bars renderer (major-col minor-col value-col invert?))
+(struct stacked-bars renderer (major-col minor-col value-col invert? aggregator labels?))
 (struct histogram renderer (col bins invert?))
+(struct function renderer (f min max name))
 
-(struct plot (data axes legend title renderers))
+(struct plot (data x-axis y-axis legend title renderers))
 
 (define-simple-macro (plot-set a-plot field v)
   (struct-copy plot a-plot [field v]))
@@ -134,13 +72,15 @@ Some things to think about:
   (struct-copy plot a-plot [field (f v (get-field a-plot))]))
 
 (define (graph data)
-  (plot data empty #f #f empty))
+  (plot data #f #f #f #f empty))
 
 (define (with a-plot . things)
   (define (with-one a-plot a-thing)
     (match a-thing
-      [(? axis? axis)
-       (plot-update a-plot axes snoc axis)]
+      [(? x-axis? axis)
+       (plot-set a-plot x-axis axis)]
+      [(? y-axis? axis)
+       (plot-set a-plot y-axis axis)]
       [(? legend? legend)
        (plot-set a-plot legend legend)]
       [(title text)
@@ -163,7 +103,7 @@ Some things to think about:
                      #:ensure-max-tick? [ensure-max-tick? #t]
                      #:minimum-ticks [minimum-ticks empty]
                      #:tick-lines? [tick-lines? #f]
-                     #:layout [layout 'linear]
+                     #:layout [layout 'auto]
                      #:min [min #f]
                      #:max [max #f])
   (x-axis label
@@ -185,7 +125,7 @@ Some things to think about:
                      #:ensure-max-tick? [ensure-max-tick? #t]
                      #:minimum-ticks [minimum-ticks empty]
                      #:tick-lines? [tick-lines? #f]
-                     #:layout [layout 'linear]
+                     #:layout [layout 'auto]
                      #:min [min #f]
                      #:max [max #f])
   (y-axis label
@@ -227,42 +167,59 @@ Some things to think about:
                            #:value value
                            #:colors [colors 'auto]
                            #:alpha [alpha 1]
-                           #:invert? [invert? #f])
-  (stacked-bars (appearance colors alpha 'auto 'auto) major minor value invert?))
+                           #:invert? [invert? #f]
+                           #:aggregate [aggregator +]
+                           #:labels? [labels? #t])
+  (stacked-bars (appearance colors alpha 'auto 'auto) major minor value invert? aggregator labels?))
 (define-maker-with-appearance (make-histogram #:x x
                                               #:bins [bins 30]
                                               #:invert? [invert? #f])
   (histogram x bins invert?))
+(define-maker-with-appearance (make-function f
+                                             #:min min
+                                             #:max max
+                                             #:name [name #f])
+  (function f min max name))
 
 
 (define (render a-plot)
-  (match-define (plot data axes legend title renderers) a-plot)
+  (match-define (plot data x-axis y-axis legend title renderers) a-plot)
   (match-define (list x-min x-max x-axis-plot:renderers)
-    (or (axes->plot:x-axis axes data renderers)
+    (if x-axis
+        (x-axis->plot:axis x-axis data renderers)
         (list #f #f empty)))
   (match-define (list y-min y-max y-axis-plot:renderers)
-    (or (axes->plot:y-axis axes data renderers)
+    (if y-axis
+        (y-axis->plot:axis y-axis data renderers)
         (list #f #f empty)))
   (define plot:renderers (renderers->plot:renderer-tree data
                                                         renderers
                                                         #:bar-x-ticks? (not (empty? x-axis-plot:renderers))
-                                                        #:bar-y-ticks? (not (empty? y-axis-plot:renderers))))
+                                                        #:bar-y-ticks? (not (empty? y-axis-plot:renderers))
+                                                        #:legend? legend))
   (parameterize ([plot:plot-title title]
-                 [plot:plot-x-label (axes->x-label axes)]
-                 [plot:plot-y-label (axes->y-label axes)]
+                 [plot:plot-x-label (axis->label x-axis)]
+                 [plot:plot-y-label (axis->label y-axis)]
                  [plot:plot-x-ticks plot:no-ticks]
-                 [plot:plot-y-ticks plot:no-ticks])
+                 [plot:plot-y-ticks plot:no-ticks]
+                 [plot:plot-x-transform (first (axis->ticks+transform x-axis))]
+                 [plot:plot-y-transform (first (axis->ticks+transform y-axis))])
     (plot:plot (append (list x-axis-plot:renderers
                              y-axis-plot:renderers)
                        plot:renderers)
                #:x-min (or x-min (and (empty? plot:renderers) 0))
                #:x-max (or x-max (and (empty? plot:renderers) 0))
                #:y-min (or y-min (and (empty? plot:renderers) 0))
-               #:y-max (or y-max (and (empty? plot:renderers) 0)))))
+               #:y-max (or y-max (and (empty? plot:renderers) 0))
+               #:legend-anchor (if legend
+                                   (if-auto (legend-position legend)
+                                            (plot:plot-legend-anchor))
+                                   (plot:plot-legend-anchor)))))
 
 (define (renderer->plot:renderer-tree data renderer
                                       #:bar-x-ticks? bar-x-ticks?
-                                      #:bar-y-ticks? bar-y-ticks?)
+                                      #:bar-y-ticks? bar-y-ticks?
+                                      #:legend? add-legend?)
   (match renderer
     [(point-label (appearance color alpha size type) x y content anchor)
      (plot:point-label (renderer->plot:data data renderer)
@@ -277,13 +234,15 @@ Some things to think about:
                   #:color (if-auto color (plot:point-color))
                   #:alpha (if-auto alpha (plot:point-alpha))
                   #:size (if-auto size (plot:point-size))
-                  #:sym (if-auto type (plot:point-sym)))]
+                  #:sym (if-auto type (plot:point-sym))
+                  #:label (and add-legend? y-col))]
     [(line (appearance color alpha size type) x-col y-col)
      (plot:lines (renderer->plot:data data renderer)
                  #:color (if-auto color (plot:line-color))
                  #:alpha (if-auto alpha (plot:line-alpha))
                  #:width (if-auto size (plot:line-width))
-                 #:style (if-auto type (plot:line-style)))]
+                 #:style (if-auto type (plot:line-style))
+                 #:label (and add-legend? y-col))]
     [(bars (appearance color alpha size type) x-col y-col)
      (plot:discrete-histogram (renderer->plot:data data renderer)
                               #:color (if-auto color (plot:rectangle-color))
@@ -293,17 +252,29 @@ Some things to think about:
                               #:invert? (categorical? data y-col)
                               #:add-ticks? (if (categorical? data y-col)
                                                bar-y-ticks?
-                                               bar-x-ticks?))]
-    [(stacked-bars (appearance color alpha size type) major-col minor-col value-col invert?)
-     (plot:stacked-histogram (renderer->plot:data data renderer)
-                             #:colors (if-auto color (plot:stacked-histogram-colors))
-                             #:alphas (if-auto alpha (plot:stacked-histogram-colors))
-                             #:line-widths (if-auto size (plot:stacked-histogram-line-widths))
-                             #:styles (if-auto type (plot:stacked-histogram-styles))
-                             #:invert? invert?
-                             #:add-ticks? (if invert?
-                                              bar-y-ticks?
-                                              bar-x-ticks?))]
+                                               bar-x-ticks?)
+                              #:label (and add-legend? y-col))]
+    [(stacked-bars (appearance color alpha size type) major-col minor-col value-col invert? _ labels?)
+     (define raw-data (renderer->plot:data data renderer))
+     (list (plot:stacked-histogram raw-data
+                                   #:colors (if-auto color (plot:stacked-histogram-colors))
+                                   #:alphas (list (if-auto alpha (plot:stacked-histogram-alphas)))
+                                   #:line-widths (if-auto size (plot:stacked-histogram-line-widths))
+                                   #:styles (if-auto type (plot:stacked-histogram-styles))
+                                   #:invert? invert?
+                                   #:add-ticks? (if invert?
+                                                    bar-y-ticks?
+                                                    bar-x-ticks?)
+                                   ;; #:labels (if legend?
+                                   ;;              ...
+                                   ;;              '(#f))
+                                   )
+           (if labels?
+               (make-stacked-bar-labels data
+                                        raw-data
+                                        major-col
+                                        minor-col)
+               empty))]
     [(histogram (appearance color alpha size type) x-col bins invert?)
      (plot:discrete-histogram (renderer->plot:data data renderer)
                               #:color (if-auto color (plot:rectangle-color))
@@ -313,16 +284,29 @@ Some things to think about:
                               #:invert? invert?
                               #:add-ticks? (if invert?
                                                bar-y-ticks?
-                                               bar-x-ticks?))]))
+                                               bar-x-ticks?)
+                              #:label (and add-legend? (~a x-col " count")))]
+    [(function (appearance color alpha size type) f min max name)
+     (plot:function f
+                    min
+                    max
+                    #:color (if-auto color (plot:line-color))
+                    #:alpha (if-auto alpha (plot:line-alpha))
+                    #:width (if-auto size (plot:line-width))
+                    #:style (if-auto type (plot:line-style))
+                    #:label (and add-legend? name))]
+    [(? add-legend?) empty]))
 (define (renderers->plot:renderer-tree data renderers
                                        #:bar-x-ticks? bar-x-ticks?
-                                       #:bar-y-ticks? bar-y-ticks?)
+                                       #:bar-y-ticks? bar-y-ticks?
+                                       #:legend? add-legend?)
   (let loop ([renderers renderers])
     (match renderers
       [(cons r more)
        (cons (renderer->plot:renderer-tree data r
                                            #:bar-x-ticks? bar-x-ticks?
-                                           #:bar-y-ticks? bar-y-ticks?)
+                                           #:bar-y-ticks? bar-y-ticks?
+                                           #:legend? add-legend?)
              (loop more))]
       ['() empty])))
 
@@ -331,86 +315,91 @@ Some things to think about:
     [(vector (? real?) ...) #f]
     [else #t]))
 
-(define-simple-macro (define-axes-> field:id {~optional extractor})
-  #:with axes->x (format-id this-syntax "axes->x-~a" #'field)
-  #:with axes->y (format-id this-syntax "axes->y-~a" #'field)
-  #:with axes->  (format-id #f "axes->~a" #'field)
-  #:with getter  (format-id this-syntax "axis-~a" #'field)
-  (begin
-    (define (axes->x axes) (axes-> x-axis? axes))
-    (define (axes->y axes) (axes-> y-axis? axes))
-    (define (axes-> right-axis? axes)
-      (for/first ([an-axis (in-list axes)]
-                  #:when (right-axis? an-axis))
-        {~? (extractor an-axis) (getter an-axis)}))))
-(define-axes-> label)
-(define-axes-> min)
-(define-axes-> max)
+(define (axis->label maybe-axis)
+  (if (axis? maybe-axis)
+      (axis-label maybe-axis)
+      #f))
 
-(define (axes->plot:x-axis axes data renderers)
-  (axes->plot:axis x-axis?
-          plot:x-ticks
-          axes
-          data
-          renderers))
-(define (axes->plot:y-axis axes data renderers)
-  (axes->plot:axis y-axis?
-          plot:y-ticks
-          axes
-          data
-          renderers))
-(define (axes->plot:axis right-axis? make-plot:axis axes data renderers)
-  (for/first ([an-axis (in-list axes)]
-              #:when (right-axis? an-axis))
-    (define-values {the-min the-max categorical?}
-      (cond [(and (axis-min an-axis)
-                  (axis-max an-axis))
-             ;; Avoid calculating any inferred bounds if not needed
-             (values (axis-min an-axis) (axis-max an-axis) #f)]
-            [else
-             (define-values {inferred-min inferred-max categorical?}
-               (infer-bounds data renderers (x-axis? an-axis)))
-             (values (or (axis-min an-axis) inferred-min)
-                     (or (axis-max an-axis) inferred-max)
-                     categorical?)]))
-    (define extra-ticks
-      (append (if (axis-ensure-min-tick? an-axis)
-                  (list the-min)
-                  empty)
-              (if (axis-ensure-max-tick? an-axis)
-                  (list the-max)
-                  empty)
-              (axis-minimum-ticks an-axis)))
-    (list the-min
-          the-max
-          (list (make-plot:axis
-                 (if (and (axis-ticks? an-axis)
-                          (not categorical?))
-                     (plot:ticks-generate
-                      (plot:ticks-add
-                       (match* {(axis-major-ticks-every an-axis)
-                                (axis-minor-ticks-between-major an-axis)}
-                         [{'auto _} (plot:linear-ticks)]
-                         [{(or #f 0) _} (plot:ticks plot:no-ticks-layout
-                                                    (plot:linear-ticks-format))]
-                         [{n 0}
-                          (plot:linear-ticks
-                           #:number (max (quotient (- the-max the-min) n) 1)
-                           #:divisors '(1))]
-                         [{n 'auto}
-                          (plot:linear-ticks
-                           #:number (max (quotient (- the-max the-min) n) 1))])
-                       extra-ticks)
-                      the-min
-                      the-max)
-                     ;; either categorical? is true, so we need the axis, but since it's categorical we leave it up to plot's internal handling above in render
-                     ;; otherwise we don't need the ticks at all
-                     empty))
-                (if (axis-tick-lines? an-axis)
-                    (if (x-axis? an-axis)
-                        (plot:x-tick-lines)
-                        (plot:y-tick-lines))
-                    empty)))))
+(define (x-axis->plot:axis x-axis data renderers)
+  (axis->plot:axis x-axis
+                   plot:x-ticks
+                   data
+                   renderers))
+(define (y-axis->plot:axis y-axis data renderers)
+  (axis->plot:axis y-axis
+                   plot:y-ticks
+                   data
+                   renderers))
+(define (axis->plot:axis an-axis make-plot:axis data renderers)
+  (define-values {the-min the-max categorical?}
+    (cond [(and (axis-min an-axis)
+                (axis-max an-axis))
+           ;; Avoid calculating any inferred bounds if not needed
+           (values (axis-min an-axis) (axis-max an-axis) #f)]
+          [else
+           (define-values {inferred-min inferred-max categorical?}
+             (infer-bounds data renderers (x-axis? an-axis)))
+           (values (or (axis-min an-axis) inferred-min)
+                   (or (axis-max an-axis) inferred-max)
+                   categorical?)]))
+  (define extra-ticks
+    (append (if (axis-ensure-min-tick? an-axis)
+                (list the-min)
+                empty)
+            (if (axis-ensure-max-tick? an-axis)
+                (list the-max)
+                empty)
+            (axis-minimum-ticks an-axis)))
+  (define plot:ticks-fn (second (axis->ticks+transform an-axis)))
+  (list the-min
+        the-max
+        (list (make-plot:axis
+               (if (and (axis-ticks? an-axis)
+                        (not categorical?))
+                   (plot:ticks-generate
+                    (plot:ticks-add
+                     (match* {(axis-major-ticks-every an-axis)
+                              (axis-minor-ticks-between-major an-axis)}
+                       [{'auto _} plot:ticks-fn]
+                       [{(or #f 0) _} (plot:ticks plot:no-ticks-layout
+                                                  (plot:linear-ticks-format))]
+                       [{n _}
+                        (=> continue)
+                        (match (axis-layout an-axis)
+                          [(or 'auto 'linear) (continue)]
+                          [other (raise-user-error
+                                  'complot
+                                  @~a{
+                                      #:major-tick-every n is only supported
+                                      for linear axis layouts (the default),
+                                      but you asked for a non-linear layout:
+                                      @~s[other]
+                                      })])]
+                       [{n 0}
+                        (plot:linear-ticks
+                         #:number (max (quotient (- the-max the-min) n) 1)
+                         #:divisors '(1))]
+                       [{n 'auto}
+                        (plot:linear-ticks
+                         #:number (max (quotient (- the-max the-min) n) 1))])
+                     extra-ticks)
+                    the-min
+                    the-max)
+                   ;; either categorical? is true, so we need the axis, but since it's categorical we leave it up to plot's internal handling above in render
+                   ;; otherwise we don't need the ticks at all
+                   empty))
+              (if (axis-tick-lines? an-axis)
+                  (if (x-axis? an-axis)
+                      (plot:x-tick-lines)
+                      (plot:y-tick-lines))
+                  empty))))
+
+(define (axis->ticks+transform axis)
+  (match (and axis (axis-layout axis))
+    [(or #f 'auto) (list (plot:plot-x-transform) (plot:plot-x-ticks))]
+    ['linear (list plot:id-transform (plot:linear-ticks))]
+    ['log (list plot:log-transform (plot:log-ticks))]
+    [other other]))
 
 (define (if-auto v auto-value)
   (match v
@@ -431,9 +420,26 @@ Some things to think about:
                               y-col)))]
     #;[(points _ (? string? x-col) #f)
        (vector->list (df-select data x-col))]
-    [(stacked-bars _ major-col minor-col value-col invert?)
-     ;; todo
-     #f]
+    [(stacked-bars _ major-col minor-col value-col invert? aggregator _)
+     #|
+     | group    | category  | money |
+     |----------+-----------+-------|
+     | expenses | food      |    20 |
+     |          | transport |    30 |
+     |          | laundry   |    10 |
+     | income   | paycheck  |   100 |
+     |          | side-job  |    10 |
+        ^          ^           ^
+       major      minor       value
+     |#
+     (define sorted-data (sort-data-by-major/minor-groups data
+                                                          major-col
+                                                          minor-col))
+     (for/list ([major-col-group-df (in-list (split-with sorted-data major-col))])
+       (define group-value (vector-ref (df-select major-col-group-df major-col) 0))
+       (list group-value
+             (for/list ([minor-col-group-df (in-list (split-with major-col-group-df minor-col))])
+               (apply aggregator (vector->list (df-select minor-col-group-df value-col))))))]
     [(histogram _ col bins invert?)
      (cond [(categorical? data col)
             (define frequencies
@@ -448,7 +454,49 @@ Some things to think about:
                                       (/ (- values-max values-min) bins)))
             (for/list ([a-bin (bin-samples bin-bounds <= the-values)])
               (list (/ (- (sample-bin-max a-bin) (sample-bin-min a-bin)) 2)
-                    (length (sample-bin-values a-bin))))])]))
+                    (length (sample-bin-values a-bin))))])]
+    [(function _ f min max _)
+     (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
+       (list x (f x)))]))
+
+(define (sort-data-by-major/minor-groups data major-col minor-col)
+  (define major-sorted (reorder data major-col))
+  (define grouped-by-major (group-with major-sorted major-col))
+  (define sorted-within-major (reorder grouped-by-major minor-col))
+  (ungroup sorted-within-major))
+
+(define (data->stacked-bar-label-info data
+                                      raw-data
+                                      major-col
+                                      minor-col)
+  (define sorted-data (sort-data-by-major/minor-groups data
+                                                       major-col
+                                                       minor-col))
+  (append*
+   (for/list ([major-col-group-df (in-list (split-with sorted-data major-col))]
+              [major-col-group    (in-list raw-data)]
+              [x-pos              (in-range 0.5 (+ 0.5 (length raw-data)))])
+     (for/fold ([points empty]
+                [bar-height-so-far 0]
+                #:result points)
+               ([minor-col-group-df (in-list (split-with major-col-group-df minor-col))]
+                [minor-col-value    (in-list (second major-col-group))])
+       (define minor-group-key (vector-ref (df-select minor-col-group-df minor-col) 0))
+       (values (cons (list x-pos
+                           (+ bar-height-so-far (/ minor-col-value 2))
+                           minor-group-key)
+                     points)
+               (+ bar-height-so-far minor-col-value))))))
+(define (make-stacked-bar-labels data
+                                 raw-data
+                                 major-col
+                                 minor-col)
+  (for/list ([info (in-list (data->stacked-bar-label-info data raw-data major-col minor-col))])
+    (match-define (list x-pos y-pos label) info)
+    (plot:point-label (list x-pos y-pos)
+                      label
+                      #:anchor 'center
+                      #:point-size 0)))
 
 (define (infer-bounds data renderers x? #|otherwise y|#)
   (define (real-min/maxes vs)
@@ -465,6 +513,12 @@ Some things to think about:
         [(list (list (? (negate real?) xs) _) ...)
          #:when x?
          (list 0 (length xs) #t)]
+        [(list (list _ (list (? real? y-part-lists) ...)) ...)
+         #:when (not x?)
+         (define y-totals
+           (for/list ([y-parts (in-list y-part-lists)])
+             (apply + y-parts)))
+         (real-min/maxes y-totals)]
         [(list (list _ (? (negate real?) ys)) ...)
          #:when (not x?)
          (list 0 (length ys) #t)])))
@@ -517,4 +571,85 @@ Some things to think about:
                                5 26.34 "kinda"))
                 (make-histogram #:x "ok?")
                 (make-x-axis)
-                (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))))
+                (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0)))
+  (render (with (graph (row-df [date price ok?]
+                               1 20.50 "yes"
+                               2 22 "no"
+                               3 20 "no"
+                               4 23 "no"
+                               4 23 "yes"
+                               5 26.34 "kinda"))
+                (make-histogram #:x "ok?")
+                (make-x-axis)
+                (make-y-axis #:min 0 #:major-tick-every #f
+                             #:minimum-ticks '(1 1.5)
+                             #:ensure-max-tick? #f
+                             #:ensure-min-tick? #f)))
+  (render (with (graph (row-df [major minor money]
+                               "expenses" "food" 20
+                               "expenses" "transport" 30
+                               "expenses" "laundry" 10
+                               "expenses" "laundry" 5
+                               "income" "paycheck" 100
+                               "income" "side-job" 10))
+                (make-stacked-bars #:category "major"
+                                   #:subcategory "minor"
+                                   #:value "money"
+                                   #:labels? #f)
+                (make-x-axis)
+                (make-y-axis #:min 0)))
+  (render (with (graph (row-df [major minor money]
+                               "expenses" "food" 20
+                               "expenses" "transport" 30
+                               "expenses" "laundry" 10
+                               "expenses" "laundry" 5
+                               "income" "paycheck" 100
+                               "income" "side-job" 10))
+                (make-stacked-bars #:category "major"
+                                   #:subcategory "minor"
+                                   #:value "money")
+                (make-x-axis)
+                (make-y-axis #:min 0)))
+
+  (render (with (graph (row-df [a] 5))
+                (make-function (λ (x) (expt 2 x))
+                               #:min 1 #:max 100)
+                (make-x-axis #:min 1 #:max 100)
+                (make-y-axis #:layout 'log)))
+
+  (require rackunit)
+  (check-equal? (renderer->plot:data (row-df [major minor money]
+                                             "expenses" "food" 20
+                                             "expenses" "transport" 30
+                                             "expenses" "laundry" 10
+                                             "expenses" "laundry" 5
+                                             "income" "paycheck" 100
+                                             "income" "side-job" 10)
+                                     (make-stacked-bars #:category "major"
+                                                        #:subcategory "minor"
+                                                        #:value "money"))
+                ;; 15 before 30 because of sorting
+                '(("expenses" (20 15 30))
+                  ("income" (100 10))))
+  (check-equal? (let ([data (row-df [major minor money]
+                                    "expenses" "food" 20
+                                    "expenses" "transport" 30
+                                    "expenses" "laundry" 10
+                                    "expenses" "laundry" 5
+                                    "income" "paycheck" 100
+                                    "income" "side-job" 10)])
+                  (data->stacked-bar-label-info
+                   data
+                   (renderer->plot:data
+                    data
+                    (make-stacked-bars #:category "major"
+                                       #:subcategory "minor"
+                                       #:value "money"
+                                       #:labels? #t))
+                   "major"
+                   "minor"))
+                '((0.5 50 "transport")
+                  (0.5 55/2 "laundry")
+                  (0.5 10 "food")
+                  (1.5 105 "side-job")
+                  (1.5 50 "paycheck"))))
