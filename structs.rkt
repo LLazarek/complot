@@ -29,10 +29,19 @@
          make-bars
          make-stacked-bars
          make-histogram
-         make-function)
+         make-function
+
+         current-complot-printer)
 
 (require syntax/parse/define
          (for-syntax racket/syntax))
+
+(define current-complot-printer (make-parameter (λ (thing port mode)
+                                                  (define recur (match mode
+                                                    [#t write]
+                                                    [#f display]
+                                                    [else print]))
+                                                  (display @~a{#<complot-thing>} port))))
 
 (struct appearance (color
                     alpha
@@ -40,23 +49,28 @@
                     type ; symbol for points, style for lines
                     ))
 
-(struct axis (label
-              ticks?
-              major-ticks-every
-              minor-ticks-between-major
-              tick-lines?
-              min
-              max
-              layout
-              ensure-min-tick?
-              ensure-max-tick?
-              minimum-ticks))
+(struct complot-printable ()
+  #:methods gen:custom-write
+  [(define (write-proc . args)
+     (apply (current-complot-printer) args))])
+
+(struct axis complot-printable (label
+                                ticks?
+                                major-ticks-every
+                                minor-ticks-between-major
+                                tick-lines?
+                                min
+                                max
+                                layout
+                                ensure-min-tick?
+                                ensure-max-tick?
+                                minimum-ticks))
 (struct x-axis axis ())
 (struct y-axis axis ())
 (struct legend (position))
-(struct title (text))
+(struct title complot-printable (text))
 
-(struct renderer (appearance))
+(struct renderer complot-printable (appearance))
 (struct point-label renderer (x y content anchor))
 (struct points renderer (x-col y-col))
 (struct line renderer (x-col y-col))
@@ -65,7 +79,7 @@
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max name))
 
-(struct plot (data x-axis y-axis legend title renderers))
+(struct plot complot-printable (data x-axis y-axis legend title renderers))
 
 (define-simple-macro (plot-set a-plot field v)
   (struct-copy plot a-plot [field v]))
