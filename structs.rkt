@@ -47,6 +47,7 @@
                     alpha
                     size ; size for points, thickness for lines
                     type ; symbol for points, style for lines
+                    label
                     ))
 
 (struct complot-printable ()
@@ -67,17 +68,17 @@
                                 minimum-ticks))
 (struct x-axis axis ())
 (struct y-axis axis ())
-(struct legend (position))
+(struct legend (position type))
 (struct title complot-printable (text))
 
 (struct renderer complot-printable (appearance))
 (struct point-label renderer (x y content anchor))
-(struct points renderer (x-col y-col))
+(struct points renderer (x-col y-col)) ;; todo: support faceting points as well
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col))
 (struct stacked-bars renderer (x-col facet-col y-col invert? aggregator labels?))
 (struct histogram renderer (col bins invert?))
-(struct function renderer (f min max name))
+(struct function renderer (f min max))
 
 (struct plot complot-printable (data x-axis y-axis legend title renderers))
 
@@ -116,25 +117,30 @@
 (define-axis-maker make-x-axis x-axis)
 (define-axis-maker make-y-axis y-axis)
 
+(define (make-legend #:position [position 'auto]
+                     #:type [type 'new])
+  (legend position type))
+
 (define-simple-macro (define-maker-with-appearance (id:id formals ...)
                        (s e ...))
   (define (id formals ...
               #:color [color 'auto]
               #:alpha [alpha 1]
               #:size [size 'auto]
-              #:type [type 'auto])
-    (s (appearance color alpha size type) e ...)))
+              #:type [type 'auto]
+              #:label [label 'auto])
+    (s (appearance color alpha size type label) e ...)))
 (define-maker-with-appearance (make-point-label x y content
                                                 #:anchor [anchor 'auto])
   (point-label x y content anchor))
 (define-maker-with-appearance (make-points #:x x
-                                           #:y [y #f])
+                                           #:y [y #f]) ;; todo, support dot plots and faceting
   (points x y))
 (define-maker-with-appearance (make-line #:x x
                                          #:y y)
   (line x y))
 (define-maker-with-appearance (make-bars #:x x
-                                         #:y y)
+                                         #:y y) ;; todo: support invert?
   (bars x y))
 (define (make-stacked-bars #:x x-col
                            #:facet facet-col
@@ -157,7 +163,6 @@
   (histogram x bins invert?))
 (define-maker-with-appearance (make-function f
                                              #:min min
-                                             #:max max
-                                             #:name [name #f])
-  (function f min max name))
+                                             #:max max)
+  (function f min max))
 

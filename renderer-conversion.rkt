@@ -16,7 +16,7 @@
                                       #:bar-y-ticks? bar-y-ticks?
                                       #:legend? add-legend?)
   (match renderer
-    [(point-label (appearance color alpha size type) x y content anchor)
+    [(point-label (appearance color alpha size type label) x y content anchor)
      (plot:point-label (renderer->plot:data data renderer)
                        content
                        #:color (if-auto color (plot:plot-foreground))
@@ -24,21 +24,21 @@
                        #:point-size (if-auto size (plot:label-point-size))
                        #:point-sym (if-auto type 'fullcircle)
                        #:anchor anchor)]
-    [(points (appearance color alpha size type) x-col y-col)
+    [(points (appearance color alpha size type label) x-col y-col)
      (plot:points (renderer->plot:data data renderer)
                   #:color (if-auto color (plot:point-color))
                   #:alpha (if-auto alpha (plot:point-alpha))
                   #:size (if-auto size (plot:point-size))
                   #:sym (if-auto type (plot:point-sym))
                   #:label (and add-legend? y-col))]
-    [(line (appearance color alpha size type) x-col y-col)
+    [(line (appearance color alpha size type label) x-col y-col)
      (plot:lines (renderer->plot:data data renderer)
                  #:color (if-auto color (plot:line-color))
                  #:alpha (if-auto alpha (plot:line-alpha))
                  #:width (if-auto size (plot:line-width))
                  #:style (if-auto type (plot:line-style))
                  #:label (and add-legend? y-col))]
-    [(bars (appearance color alpha size type) x-col y-col)
+    [(bars (appearance color alpha size type label) x-col y-col)
      (plot:discrete-histogram (renderer->plot:data data renderer)
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
@@ -49,7 +49,13 @@
                                                bar-y-ticks?
                                                bar-x-ticks?)
                               #:label (and add-legend? y-col))]
-    [(stacked-bars (appearance color alpha size type) major-col minor-col value-col invert? _ labels?)
+    [(stacked-bars (appearance color alpha size type label)
+                   major-col
+                   minor-col
+                   value-col
+                   invert?
+                   _
+                   labels?)
      (define raw-data (renderer->plot:data data renderer))
      (list (plot:stacked-histogram raw-data
                                    #:colors (if-auto color (plot:stacked-histogram-colors))
@@ -70,7 +76,7 @@
                                         major-col
                                         minor-col)
                empty))]
-    [(histogram (appearance color alpha size type) x-col bins invert?)
+    [(histogram (appearance color alpha size type label) x-col bins invert?)
      (plot:discrete-histogram (renderer->plot:data data renderer)
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
@@ -81,7 +87,7 @@
                                                bar-y-ticks?
                                                bar-x-ticks?)
                               #:label (and add-legend? (~a x-col " count")))]
-    [(function (appearance color alpha size type) f min max name)
+    [(function (appearance color alpha size type label) f min max)
      (plot:function f
                     min
                     max
@@ -89,7 +95,7 @@
                     #:alpha (if-auto alpha (plot:line-alpha))
                     #:width (if-auto size (plot:line-width))
                     #:style (if-auto type (plot:line-style))
-                    #:label (and add-legend? name))]
+                    #:label (and add-legend? label))]
     [(? add-legend?) empty]))
 
 (define (renderers->plot:renderer-tree data renderers
@@ -160,7 +166,7 @@
             (for/list ([a-bin (bin-samples bin-bounds <= the-values)])
               (list (/ (- (sample-bin-max a-bin) (sample-bin-min a-bin)) 2)
                     (length (sample-bin-values a-bin))))])]
-    [(function _ f min max _)
+    [(function _ f min max)
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
        (list x (f x)))]))
 

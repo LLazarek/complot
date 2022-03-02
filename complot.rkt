@@ -18,6 +18,7 @@ todo:
                      [make-stacked-bars  stacked-bars]
                      [make-histogram     histogram]
                      [make-function      function])
+         title
          with
          describe
          read-data
@@ -30,9 +31,10 @@ todo:
          "util.rkt"
          (prefix-in plot: plot)
          (prefix-in graphite: graphite)
-         (prefix-in pict: (only-in pict text))
+         (prefix-in pict: pict)
          sawzall
-         data-frame)
+         data-frame
+         file/convertible)
 
 (define (with a-plot . things)
   (define (with-one a-plot a-thing)
@@ -55,10 +57,17 @@ todo:
 
 (define (snoc x l) (append l (list x)))
 
+(define (should-add-new-style-legend? maybe-legend renderers)
+  (match* {maybe-legend renderers}
+    [{(legend 'auto 'new)
+      (list (or (? line?) (? points?) (? function?)) ...)}
+     #t]
+    [{_ _} #f]))
+
 (define (render-plot a-plot [outpath #f]
                      #:width [width (plot:plot-width)]
                      #:height [height (plot:plot-height)])
-  (match-define (plot data x-axis y-axis legend title renderers) a-plot)
+  (match-define (plot data x-axis y-axis maybe-legend title renderers) a-plot)
   (match-define (list x-min x-max x-axis-plot:renderers)
     (if x-axis
         (x-axis->plot:axis x-axis data renderers)
@@ -67,12 +76,14 @@ todo:
     (if y-axis
         (y-axis->plot:axis y-axis data renderers)
         (list #f #f empty)))
+  (define new-style-legend? (should-add-new-style-legend? maybe-legend renderers))
   (define plot:renderers
     (renderers->plot:renderer-tree data
                                    renderers
                                    #:bar-x-ticks? (not (empty? x-axis-plot:renderers))
                                    #:bar-y-ticks? (not (empty? y-axis-plot:renderers))
-                                   #:legend? legend))
+                                   #:legend? (and maybe-legend
+                                                  (not new-style-legend?))))
   (parameterize ([plot:plot-title title]
                  [plot:plot-x-label (axis->label x-axis)]
                  [plot:plot-y-label (axis->label y-axis)]
@@ -82,20 +93,34 @@ todo:
                  [plot:plot-y-transform (first (axis->ticks+transform y-axis))]
                  [plot:plot-pen-color-map 'tab10]
                  [plot:plot-brush-color-map 'tab10])
-    (plot:plot (append (list x-axis-plot:renderers
-                             y-axis-plot:renderers)
-                       plot:renderers)
-               #:x-min (or x-min (and (empty? plot:renderers) 0))
-               #:x-max (or x-max (and (empty? plot:renderers) 0))
-               #:y-min (or y-min (and (empty? plot:renderers) 0))
-               #:y-max (or y-max (and (empty? plot:renderers) 0))
-               #:legend-anchor (if legend
-                                   (if-auto (legend-position legend)
-                                            (plot:plot-legend-anchor))
-                                   (plot:plot-legend-anchor))
-               #:width width
-               #:height height
-               #:out-file outpath)))
+    (define p
+      (plot:plot-pict (append (list x-axis-plot:renderers
+                                    y-axis-plot:renderers)
+                              plot:renderers)
+                      #:x-min (or x-min (and (empty? plot:renderers) 0))
+                      #:x-max (or x-max (and (empty? plot:renderers) 0))
+                      #:y-min (or y-min (and (empty? plot:renderers) 0))
+                      #:y-max (or y-max (and (empty? plot:renderers) 0))
+                      #:legend-anchor (match maybe-legend
+                                        [(legend (and pos (not 'auto)) 'old) pos]
+                                        [else (plot:plot-legend-anchor)])
+                      #:width width
+                      #:height height))
+    (define p+legend
+      (cond [new-style-legend?
+             (add-new-style-legend p a-plot)]
+            [else p]))
+    (when outpath
+      (call-with-output-file outpath
+        #:exists 'replace
+        (λ (out) (write-bytes (convert p+legend
+                                       (match outpath
+                                         [(regexp #rx"\\.png$") 'png-bytes]
+                                         [(regexp #rx"\\.gif$") 'gif-bytes]
+                                         [(regexp #rx"\\.svg$") 'svg-bytes]
+                                         [(regexp #rx"\\.pdf$") 'pdf-bytes]))
+                              out))))
+    p+legend))
 
 (define (render thing)
   (match thing
@@ -141,6 +166,48 @@ todo:
                                        mode)
                                   (write (render thing) port)]
                                  [else (display "#<complot-thing>" port)])))
+
+
+(define (add-new-style-legend plot-pict a-plot)
+  (define data (plot-data a-plot))
+  (define convert-coords (plot:plot-pict-plot->dc plot-pict))
+  (define coords+labels
+    (for/list ([renderer (in-list (plot-renderers a-plot))])
+      (define renderer-raw-data (renderer->plot:data data renderer))
+      (define sorted-data (sort renderer-raw-data < #:key first))
+      (define rightmost-point (last sorted-data))
+      (define dc-coords-of-rightmost-point
+        (convert-coords (list->vector rightmost-point)))
+      (define the-appearance (renderer-appearance renderer))
+      (list (vector-ref dc-coords-of-rightmost-point 0)
+            (vector-ref dc-coords-of-rightmost-point 1)
+            (if-auto (appearance-label the-appearance)
+                     (renderer->y-axis-col renderer))
+            (if-auto (appearance-color the-appearance)
+                     "black"))))
+  ;; todo: deal with overlapping end labels?
+  ;; Maybe just support picts in labels, so that people can just fix this themselves?
+  ;; -> That's kind of crappy though. Nobody wants to have to deal with that.
+  (pict:panorama
+   (for/fold ([plot-pict plot-pict])
+             ([coords+label (in-list coords+labels)])
+     (match-define (list x y label color) coords+label)
+     (pict:pin-over plot-pict
+                     (+ x 5)
+                     (- y 10)
+                     (pict:colorize
+                      (pict:text label
+                                 (plot:plot-font-family)
+                                 (round (* (plot:plot-font-size)
+                                           (new-legend-label-scale-factor))))
+                      color)))))
+
+(define new-legend-label-scale-factor (make-parameter 1.4))
+
+(define renderer->y-axis-col
+  (match-lambda [(or (points _ _ y)
+                     (line _ _ y)) y]
+                [(? function?) "function"]))
 
 (define (read-data path)
   (df-read/csv path))
