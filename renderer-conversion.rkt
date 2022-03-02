@@ -213,9 +213,9 @@
                                              "expenses" "laundry" 5
                                              "income" "paycheck" 100
                                              "income" "side-job" 10)
-                                     (make-stacked-bars #:category "major"
-                                                        #:subcategory "minor"
-                                                        #:value "money"))
+                                     (make-stacked-bars #:x "major"
+                                                        #:facet "minor"
+                                                        #:y "money"))
                 ;; 15 before 30 because of sorting
                 '(("expenses" (20 15 30))
                   ("income" (100 10))))
@@ -230,9 +230,9 @@
                    data
                    (renderer->plot:data
                     data
-                    (make-stacked-bars #:category "major"
-                                       #:subcategory "minor"
-                                       #:value "money"
+                    (make-stacked-bars #:x "major"
+                                       #:facet "minor"
+                                       #:y "money"
                                        #:labels? #t))
                    "major"
                    "minor"))

@@ -75,7 +75,7 @@
 (struct points renderer (x-col y-col))
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col))
-(struct stacked-bars renderer (major-col minor-col value-col invert? aggregator labels?))
+(struct stacked-bars renderer (x-col facet-col y-col invert? aggregator labels?))
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max name))
 
@@ -90,18 +90,19 @@
 (define (make-plot data)
   (plot data #f #f #f #f empty))
 
-(define (make-x-axis #:label [label #f]
-                     #:ticks? [ticks? #t]
-                     #:major-tick-every [major-tick-every 'auto]
-                     #:minor-ticks-between-major [minor-ticks-between-major 'auto]
-                     #:ensure-min-tick? [ensure-min-tick? #t]
-                     #:ensure-max-tick? [ensure-max-tick? #t]
-                     #:minimum-ticks [minimum-ticks empty]
-                     #:tick-lines? [tick-lines? #f]
-                     #:layout [layout 'auto]
-                     #:min [min #f]
-                     #:max [max #f])
-  (x-axis label
+(define-simple-macro (define-axis-maker name axis)
+  (define (name #:label [label #f]
+                #:ticks? [ticks? #t]
+                #:major-tick-every [major-tick-every 'auto]
+                #:minor-ticks-between-major [minor-ticks-between-major 'auto]
+                #:ensure-min-tick? [ensure-min-tick? #t]
+                #:ensure-max-tick? [ensure-max-tick? #t]
+                #:minimum-ticks [minimum-ticks empty]
+                #:tick-lines? [tick-lines? #f]
+                #:layout [layout 'auto]
+                #:min [min #f]
+                #:max [max #f])
+    (axis label
           ticks?
           major-tick-every
           minor-ticks-between-major
@@ -111,31 +112,9 @@
           layout
           ensure-min-tick?
           ensure-max-tick?
-          minimum-ticks))
-(define (make-y-axis #:label [label #f]
-                     #:ticks [ticks? #t]
-                     #:major-tick-every [major-tick-every 'auto]
-                     #:minor-ticks-between-major [minor-ticks-between-major 'auto]
-                     #:ensure-min-tick? [ensure-min-tick? #t]
-                     #:ensure-max-tick? [ensure-max-tick? #t]
-                     #:minimum-ticks [minimum-ticks empty]
-                     #:tick-lines? [tick-lines? #f]
-                     #:layout [layout 'auto]
-                     #:min [min #f]
-                     #:max [max #f])
-  (y-axis label
-          ticks?
-          major-tick-every
-          minor-ticks-between-major
-          tick-lines?
-          min
-          max
-          layout
-          ensure-min-tick?
-          ensure-max-tick?
-          minimum-ticks))
-(define (make-legend #:position [position 'auto])
-  (legend position))
+          minimum-ticks)))
+(define-axis-maker make-x-axis x-axis)
+(define-axis-maker make-y-axis y-axis)
 
 (define-simple-macro (define-maker-with-appearance (id:id formals ...)
                        (s e ...))
@@ -157,15 +136,21 @@
 (define-maker-with-appearance (make-bars #:x x
                                          #:y y)
   (bars x y))
-(define (make-stacked-bars #:category major
-                           #:subcategory minor
-                           #:value value
+(define (make-stacked-bars #:x x-col
+                           #:facet facet-col
+                           #:y y-col
                            #:colors [colors 'auto]
                            #:alpha [alpha 1]
                            #:invert? [invert? #f]
                            #:aggregate [aggregator +]
                            #:labels? [labels? #t])
-  (stacked-bars (appearance colors alpha 'auto 'auto) major minor value invert? aggregator labels?))
+  (stacked-bars (appearance colors alpha 'auto 'auto 'auto)
+                x-col
+                facet-col
+                y-col
+                invert?
+                aggregator
+                labels?))
 (define-maker-with-appearance (make-histogram #:x x
                                               #:bins [bins 30]
                                               #:invert? [invert? #f])

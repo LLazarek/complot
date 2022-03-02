@@ -217,9 +217,9 @@ todo:
                              "expenses" "laundry" 5
                              "income" "paycheck" 100
                              "income" "side-job" 10))
-          (make-stacked-bars #:category "major"
-                             #:subcategory "minor"
-                             #:value "money"
+          (make-stacked-bars #:x "major"
+                             #:facet "minor"
+                             #:y "money"
                              #:labels? #f)
           (make-x-axis)
           (make-y-axis #:min 0))
@@ -230,16 +230,25 @@ todo:
                              "expenses" "laundry" 5
                              "income" "paycheck" 100
                              "income" "side-job" 10))
-          (make-stacked-bars #:category "major"
-                             #:subcategory "minor"
-                             #:value "money")
+          (make-stacked-bars #:x "major"
+                             #:facet "minor"
+                             #:y "money")
           (make-x-axis)
           (make-y-axis #:min 0))
     (with (make-plot (row-df [a] 5))
           (make-function (λ (x) (expt 2 x))
                          #:min 1 #:max 100)
           (make-x-axis #:min 1 #:max 100)
-          (make-y-axis #:layout 'log)))
+          (make-y-axis #:layout 'log))
+
+    (with (make-plot (row-df [x y y2]
+                             1 5 2
+                             2 3 2
+                             3 6 5))
+          (make-x-axis #:min 0)
+          (make-y-axis #:min 0 #:max 10)
+          (make-bars #:x "x" #:y "y2" #:label "gas")
+          (make-legend #:type 'new)))
 
 
   (make-x-axis)
