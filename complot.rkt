@@ -5,6 +5,8 @@ todo:
 - ✓ better default color scheme
 - ✓ support repl rendering instead of gui
 - stacked area plots
+- handle overlapping new-style legend labels
+- map plots? https://docs.racket-lang.org/map-widget/index.html
 |#
 
 (provide (rename-out [make-plot          plot]
@@ -123,11 +125,21 @@ todo:
     p+legend))
 
 (define (render thing)
+  ;; (pretty-write (continuation-mark-set->context (current-continuation-marks)))
+  ;; (newline)
   (match thing
     [(? plot? p) (render-plot p)]
-    [(? x-axis? a) (render-plot (with (make-plot (row-df [dummy] 0)) a)
+    [(? x-axis? a) (render-plot (with (make-plot (row-df [x y]
+                                                         0 0
+                                                         1 0))
+                                      (make-points #:x "x" #:y "y" #:alpha 0)
+                                      a)
                                 #:height 40)]
-    [(? y-axis? a) (render-plot (with (make-plot (row-df [dummy] 0)) a)
+    [(? y-axis? a) (render-plot (with (with (make-plot (row-df [x y]
+                                                         0 0
+                                                         0 1))
+                                      (make-points #:x "x" #:y "y" #:alpha 0)
+                                      a) a)
                                 #:width 40)]
     [(? renderer? r) (render-plot (with (make-plot
                                          ;; some arbitrary data that will
@@ -160,12 +172,20 @@ todo:
 ;; Going through this parameter just uses state to break the circularity of
 ;; `render` needing the structs, and the struct printer needing `render`
 (current-complot-printer (λ (thing port mode)
+                           ;; todo: somehow there's a bug where in the REPL a
+                           ;; single plot is being rendered twice.
+                           (define recur
+                             (match mode
+                               [#t write]
+                               [#f display]
+                               [else (λ (p port) (print p port mode))]))
                            (cond [(and #;(port-writes-special? port)
                                        ;; ^ rendering in racket-mode repl seems to not want
                                        ;; this condition
                                        mode)
-                                  (write (render thing) port)]
-                                 [else (display "#<complot-thing>" port)])))
+                                  (recur (render thing) port)]
+                                 [else (recur @~a{#<complot @(object-name thing)>}
+                                              port)])))
 
 
 (define (add-new-style-legend plot-pict a-plot)
@@ -185,27 +205,33 @@ todo:
                      (renderer->y-axis-col renderer))
             (if-auto (appearance-color the-appearance)
                      "black"))))
-  ;; todo: deal with overlapping end labels?
-  ;; Maybe just support picts in labels, so that people can just fix this themselves?
-  ;; -> That's kind of crappy though. Nobody wants to have to deal with that.
   (pict:panorama
    (for/fold ([plot-pict plot-pict])
              ([coords+label (in-list coords+labels)])
      (match-define (list x y label color) coords+label)
+     (define label-pict
+       (pict:text label
+                  (plot:plot-font-family)
+                  (round (* (plot:plot-font-size)
+                            (new-legend-label-scale-factor)))))
+     (define label-pict+color
+       (if (colorize-new-legend-labels?)
+           (pict:colorize label-pict
+                          (match color
+                            [(list* c _) c]
+                            [other other]))
+           label-pict))
      (pict:pin-over plot-pict
-                     (+ x 5)
-                     (- y 10)
-                     (pict:colorize
-                      (pict:text label
-                                 (plot:plot-font-family)
-                                 (round (* (plot:plot-font-size)
-                                           (new-legend-label-scale-factor))))
-                      color)))))
+                    (+ x 5)
+                    (- y 10)
+                    label-pict+color))))
+
+(define colorize-new-legend-labels? (make-parameter #f))
 
 (define new-legend-label-scale-factor (make-parameter 1.4))
 
 (define renderer->y-axis-col
-  (match-lambda [(or (points _ _ y)
+  (match-lambda [(or (points _ _ y _)
                      (line _ _ y)) y]
                 [(? function?) "function"]))
 
@@ -315,7 +341,54 @@ todo:
           (make-x-axis #:min 0)
           (make-y-axis #:min 0 #:max 10)
           (make-bars #:x "x" #:y "y2" #:label "gas")
+          (make-legend #:type 'new))
+    (with (make-plot (row-df [x y y2]
+                             1 5 2
+                             2 3 2
+                             3 6 5))
+          (make-x-axis #:min 0)
+          (make-y-axis #:min 0 #:max 10)
+          (make-line #:x "x" #:y "y2" #:label "gas")
           (make-legend #:type 'new)))
+
+  (render (with (make-plot (row-df [date price categ]
+                                   1 20.50 1
+                                   2 22 2
+                                   3 20 2
+                                   4 23 1
+                                   5 26.34 2))
+                (make-bars #:x "date" #:y "price")
+                (make-y-axis)))
+  (render (with (make-plot (row-df [date price categ]
+                                   1 20.50 1
+                                   2 22 2
+                                   3 20 2
+                                   4 23 1
+                                   5 26.34 2))
+                (make-bars #:x "date" #:y "price" #:invert? #t)
+                (make-y-axis)
+                (make-x-axis #:max 30)
+                (make-legend #:type 'old)))
+  (render (with (make-plot (row-df [date price categ]
+                             1 20.50 1
+                             1 22 2
+                             2 20 2
+                             2 23 1
+                             2 26.34 2))
+          (make-stacked-bars #:x "date" #:y "price" #:facet "categ")
+          (make-y-axis)
+          (make-x-axis)
+          (make-legend #:type 'old)))
+  (render (with (make-plot (row-df [date price categ]
+                             1 20.50 1
+                             1 22 2
+                             2 20 2
+                             2 23 1
+                             2 26.34 2))
+          (make-stacked-bars #:x "date" #:y "price" #:facet "categ" #:invert? #t)
+          (make-y-axis)
+          (make-x-axis)
+          (make-legend #:type 'old)))
 
 
   (make-x-axis)

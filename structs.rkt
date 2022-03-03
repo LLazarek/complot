@@ -37,11 +37,8 @@
          (for-syntax racket/syntax))
 
 (define current-complot-printer (make-parameter (λ (thing port mode)
-                                                  (define recur (match mode
-                                                    [#t write]
-                                                    [#f display]
-                                                    [else print]))
-                                                  (display @~a{#<complot-thing>} port))))
+                                                  (display @~a{#<complot @(object-name thing)>}
+                                                           port))))
 
 (struct appearance (color
                     alpha
@@ -73,9 +70,9 @@
 
 (struct renderer complot-printable (appearance))
 (struct point-label renderer (x y content anchor))
-(struct points renderer (x-col y-col)) ;; todo: support faceting points as well
+(struct points renderer (x-col y-col facet-col))
 (struct line renderer (x-col y-col))
-(struct bars renderer (x-col y-col))
+(struct bars renderer (x-col y-col invert?))
 (struct stacked-bars renderer (x-col facet-col y-col invert? aggregator labels?))
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max))
@@ -134,14 +131,16 @@
                                                 #:anchor [anchor 'auto])
   (point-label x y content anchor))
 (define-maker-with-appearance (make-points #:x x
-                                           #:y [y #f]) ;; todo, support dot plots and faceting
-  (points x y))
+                                           #:y [y #f]
+                                           #:facet [facet #f]) ;; todo: support dot plots
+  (points x y facet))
 (define-maker-with-appearance (make-line #:x x
                                          #:y y)
   (line x y))
 (define-maker-with-appearance (make-bars #:x x
-                                         #:y y) ;; todo: support invert?
-  (bars x y))
+                                         #:y y
+                                         #:invert? [invert? #f])
+  (bars x y invert?))
 (define (make-stacked-bars #:x x-col
                            #:facet facet-col
                            #:y y-col

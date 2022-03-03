@@ -24,32 +24,50 @@
                        #:point-size (if-auto size (plot:label-point-size))
                        #:point-sym (if-auto type 'fullcircle)
                        #:anchor anchor)]
-    [(points (appearance color alpha size type label) x-col y-col)
-     (plot:points (renderer->plot:data data renderer)
-                  #:color (if-auto color (plot:point-color))
-                  #:alpha (if-auto alpha (plot:point-alpha))
-                  #:size (if-auto size (plot:point-size))
-                  #:sym (if-auto type (plot:point-sym))
-                  #:label (and add-legend? y-col))]
+    [(points (appearance color alpha size type label) x-col y-col facet-col)
+     (cond [facet-col
+            (define facet-groups (split-with data facet-col))
+            (for/list ([facet-group-data facet-groups]
+                       [facet-color (in-sequences
+                                     (if (list? color)
+                                         color
+                                         (list color))
+                                     (in-naturals))])
+              (define facet-col-value (df-select facet-group-data facet-col))
+              (plot:points (renderer->plot:data facet-group-data renderer)
+                           #:color (if-auto facet-color (plot:point-color))
+                           #:alpha (if-auto alpha (plot:point-alpha))
+                           #:size (if-auto size (plot:point-size))
+                           #:sym (if-auto type (plot:point-sym))
+                           #:label (and add-legend? (match facet-col-value
+                                                      [(vector v _ ...) (~a v)]
+                                                      [else #f]))))]
+           [else
+            (plot:points (renderer->plot:data data renderer)
+                         #:color (if-auto color (plot:point-color))
+                         #:alpha (if-auto alpha (plot:point-alpha))
+                         #:size (if-auto size (plot:point-size))
+                         #:sym (if-auto type (plot:point-sym))
+                         #:label (and add-legend? (or label y-col)))])]
     [(line (appearance color alpha size type label) x-col y-col)
      (plot:lines (renderer->plot:data data renderer)
                  #:color (if-auto color (plot:line-color))
                  #:alpha (if-auto alpha (plot:line-alpha))
                  #:width (if-auto size (plot:line-width))
                  #:style (if-auto type (plot:line-style))
-                 #:label (and add-legend? y-col))]
-    [(bars (appearance color alpha size type label) x-col y-col)
+                 #:label (and add-legend? (or label y-col)))]
+    [(bars (appearance color alpha size type label) x-col y-col invert?)
      (plot:discrete-histogram (renderer->plot:data data renderer)
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
                               #:line-width (if-auto size (plot:rectangle-line-width))
                               #:style (if-auto type (plot:rectangle-style))
-                              #:invert? (categorical? data y-col)
-                              #:add-ticks? (if (categorical? data y-col)
+                              #:invert? (or invert? (categorical? data y-col))
+                              #:add-ticks? (if (or invert? (categorical? data y-col))
                                                bar-y-ticks?
                                                bar-x-ticks?)
-                              #:label (and add-legend? y-col))]
-    [(stacked-bars (appearance color alpha size type label)
+                              #:label (and add-legend? (or label y-col)))]
+    [(stacked-bars (appearance color alpha size type labels)
                    major-col
                    minor-col
                    value-col
@@ -66,15 +84,16 @@
                                    #:add-ticks? (if invert?
                                                     bar-y-ticks?
                                                     bar-x-ticks?)
-                                   ;; #:labels (if legend?
-                                   ;;              ...
-                                   ;;              '(#f))
+                                   #:labels (if legend?
+                                                labels
+                                                '(#f))
                                    )
            (if labels?
                (make-stacked-bar-labels data
                                         raw-data
                                         major-col
-                                        minor-col)
+                                        minor-col
+                                        invert?)
                empty))]
     [(histogram (appearance color alpha size type label) x-col bins invert?)
      (plot:discrete-histogram (renderer->plot:data data renderer)
@@ -86,7 +105,7 @@
                               #:add-ticks? (if invert?
                                                bar-y-ticks?
                                                bar-x-ticks?)
-                              #:label (and add-legend? (~a x-col " count")))]
+                              #:label (and add-legend? (or label (~a x-col " count"))))]
     [(function (appearance color alpha size type label) f min max)
      (plot:function f
                     min
@@ -121,9 +140,9 @@
   (match renderer
     [(point-label _ x y _ _)
      (list x y)]
-    [(or (points _ (? string? x-col) (? string? y-col))
+    [(or (points _ (? string? x-col) (? string? y-col) _)
          (line _ (? string? x-col) (? string? y-col))
-         (bars _ (? string? x-col) (? string? y-col)))
+         (bars _ (? string? x-col) (? string? y-col) _))
      (vector->list
       (vector-map vector->list
                   (df-select* data
@@ -202,11 +221,14 @@
 (define (make-stacked-bar-labels data
                                  raw-data
                                  major-col
-                                 minor-col)
+                                 minor-col
+                                 invert?)
   (for/list ([info (in-list (data->stacked-bar-label-info data raw-data major-col minor-col))])
     (match-define (list x-pos y-pos label) info)
-    (plot:point-label (list x-pos y-pos)
-                      label
+    (plot:point-label (if invert?
+                          (list y-pos x-pos)
+                          (list x-pos y-pos))
+                      (~a label)
                       #:anchor 'center
                       #:point-size 0)))
 
