@@ -4,6 +4,8 @@
 todo:
 - ✓ better default color scheme
 - ✓ support repl rendering instead of gui
+- support non-numeric values for lines and plots etc.
+- *improve error reporting*; e.g. passing `x-axis` to `with` rather than `(x-axis)`
 - stacked area plots
 - handle overlapping new-style legend labels
 - map plots? https://docs.racket-lang.org/map-widget/index.html
@@ -112,34 +114,36 @@ todo:
       (cond [new-style-legend?
              (add-new-style-legend p a-plot)]
             [else p]))
-    (when outpath
-      (call-with-output-file outpath
-        #:exists 'replace
-        (λ (out) (write-bytes (convert p+legend
-                                       (match outpath
-                                         [(regexp #rx"\\.png$") 'png-bytes]
-                                         [(regexp #rx"\\.gif$") 'gif-bytes]
-                                         [(regexp #rx"\\.svg$") 'svg-bytes]
-                                         [(regexp #rx"\\.pdf$") 'pdf-bytes]))
-                              out))))
-    p+legend))
+    (if outpath
+        (call-with-output-file outpath
+          #:exists 'replace
+          (λ (out) (write-bytes (convert p+legend
+                                         (match outpath
+                                           [(regexp #rx"\\.png$") 'png-bytes]
+                                           [(regexp #rx"\\.gif$") 'gif-bytes]
+                                           [(regexp #rx"\\.svg$") 'svg-bytes]
+                                           [(regexp #rx"\\.pdf$") 'pdf-bytes]))
+                                out)))
+        p+legend)))
 
-(define (render thing)
+(define (render thing [outpath #f])
   ;; (pretty-write (continuation-mark-set->context (current-continuation-marks)))
   ;; (newline)
   (match thing
-    [(? plot? p) (render-plot p)]
+    [(? plot? p) (render-plot p outpath)]
     [(? x-axis? a) (render-plot (with (make-plot (row-df [x y]
                                                          0 0
                                                          1 0))
                                       (make-points #:x "x" #:y "y" #:alpha 0)
                                       a)
+                                outpath
                                 #:height 40)]
     [(? y-axis? a) (render-plot (with (with (make-plot (row-df [x y]
                                                          0 0
                                                          0 1))
                                       (make-points #:x "x" #:y "y" #:alpha 0)
                                       a) a)
+                                outpath
                                 #:width 40)]
     [(? renderer? r) (render-plot (with (make-plot
                                          ;; some arbitrary data that will
@@ -163,7 +167,8 @@ todo:
                                                  9 1
                                                  9 6
                                                  10 3))
-                                        r))]
+                                        r)
+                                  outpath)]
     [(? title? t) (pict:text t)]
     [(? legend?)  (raise-user-error
                    'complot
