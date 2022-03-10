@@ -4,10 +4,10 @@
 todo:
 - ✓ better default color scheme
 - ✓ support repl rendering instead of gui
-- support non-numeric values for lines and plots etc.
-- *improve error reporting*; e.g. passing `x-axis` to `with` rather than `(x-axis)`
+- *improve error reporting*; e.g. passing `x-axis` to `with` rather than `(x-axis)`, passing non-numeric values for lines and plots etc.
 - stacked area plots
 - handle overlapping new-style legend labels
+- ghost axes? ie set bounds of plot w/o rendering an axis
 - map plots? https://docs.racket-lang.org/map-widget/index.html
 |#
 
@@ -21,7 +21,10 @@ todo:
                      [make-bars          bars]
                      [make-stacked-bars  stacked-bars]
                      [make-histogram     histogram]
-                     [make-function      function])
+                     [make-function      function]
+
+                     [with               add-to]
+                     [render             save-to-file])
          title
          with
          describe
@@ -145,30 +148,63 @@ todo:
                                       a) a)
                                 outpath
                                 #:width 40)]
-    [(? renderer? r) (render-plot (with (make-plot
-                                         ;; some arbitrary data that will
-                                         ;; illustrate the different kinds
-                                         ;; of renderers
-                                         (row-df [x y]
-                                                 1 2
-                                                 2 2
-                                                 2 8
-                                                 2 7
-                                                 2 3
-                                                 3 7
-                                                 4 4
-                                                 5 2
-                                                 5 0
-                                                 6 8
-                                                 7 7
-                                                 7 9
-                                                 7 9
-                                                 8 9
-                                                 9 1
-                                                 9 6
-                                                 10 3))
-                                        r)
-                                  outpath)]
+    [(and (or (point-label _ x-name y-name _ _)
+              (points _ x-name y-name _)
+              (line _ x-name y-name)
+              (bars _ x-name y-name _))
+          r)
+     (render-plot (with (make-plot
+                         ;; some arbitrary data that will
+                         ;; illustrate the different kinds
+                         ;; of renderers
+                         (row-df [(~a x-name) (~a y-name)]
+                                 1 2
+                                 2 2
+                                 3 7
+                                 4 4
+                                 5 2
+                                 6 8
+                                 7 9
+                                 8 9
+                                 9 1
+                                 10 3))
+                        r)
+                  outpath)]
+    [(and (stacked-bars _ x-name group-name y-name _ _ _)
+          r)
+     (render-plot (with (make-plot
+                         ;; some arbitrary data that will
+                         ;; illustrate the different kinds
+                         ;; of renderers
+                         (row-df [(~a x-name) (~a y-name) (~a group-name)]
+                                 1 2 "A"
+                                 2 2 "A"
+                                 3 7 "A"
+                                 1 1 "B"
+                                 2 5 "B"
+                                 3 4 "B"
+                                 ))
+                        r)
+                  outpath)]
+    [(and (histogram _ x-name _ _)
+          r)
+     (render-plot (with (make-plot
+                         ;; some arbitrary data that will
+                         ;; illustrate the different kinds
+                         ;; of renderers
+                         (column-df [(~a x-name) (list->vector
+                                                  (for/list ([i (in-range 100)])
+                                                    (random 100)))]))
+                        r)
+                  outpath)]
+    [(? function? r)
+     (render-plot (with (make-plot
+                         ;; some arbitrary data that will
+                         ;; illustrate the different kinds
+                         ;; of renderers
+                         (row-df [x] 1))
+                        r)
+                  outpath)]
     [(? title? t) (pict:text t)]
     [(? legend?)  (raise-user-error
                    'complot
