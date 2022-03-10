@@ -23,7 +23,10 @@
     [{(? stacked-bars?)
       (list (list _ (list (? real?) ...)) ...)}
      (void)]
-    ;; histogram isn't here, it can't be wrong!
+    [{(or (? histogram?)
+          (? function?))
+      _}
+     (void)]
     ;; Others: error
     [{(? point-label?) (list x y)}
      (error 'complot

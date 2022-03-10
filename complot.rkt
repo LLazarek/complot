@@ -207,11 +207,28 @@
                                    something-else
                                    "save-to-file (aka render)")]))
 
-;; Going through this parameter just uses state to break the circularity of
-;; `render` needing the structs, and the struct printer needing `render`
+
+
+;; A little bit of trickery here to support rendering plots and elements in the REPL.
+;; `structs.rkt` defines the parameter `current-complot-printer` to hold the function
+;; which "prints" complot data structures.
+;; The default function used in `structs.rkt` just prints some filler.
+;; Here, we overwrite that default to call `render` instead.
+;;
+;; Going through this parameter is effectively using state to break the
+;; circularity of `render` needing the structs module, and the struct printer
+;; needing to be defined alongside the data structures in the structs module,
+;; so it can't refer directly to `render`.
+;;
+;; Finally, we need a second parameter to prevent an infinite error loop if
+;; an error should ever arise in the process of trying to print a complot thing,
+;; and that error tries to print out the same complot thing.
+(define currently-printing-complot-thing? (make-parameter #f))
 (current-complot-printer (λ (thing port mode)
-                           ;; todo: somehow there's a bug where in the REPL a
-                           ;; single plot is being rendered twice.
+                           ;; todo: there's a bug where in the REPL a single
+                           ;; plot is often being rendered twice and the first
+                           ;; one being thrown away. It doesn't affect behavior
+                           ;; but is strange, and haven't had time to hunt it down.
                            (define recur
                              (match mode
                                [#t write]
@@ -220,8 +237,10 @@
                            (cond [(and #;(port-writes-special? port)
                                        ;; ^ rendering in racket-mode repl seems to not want
                                        ;; this condition
-                                       mode)
-                                  (recur (render thing) port)]
+                                       mode
+                                       (not (currently-printing-complot-thing?)))
+                                  (parameterize ([currently-printing-complot-thing? #t])
+                                    (recur (render thing) port))]
                                  [else (recur @~a{#<complot @(object-name thing)>}
                                               port)])))
 
