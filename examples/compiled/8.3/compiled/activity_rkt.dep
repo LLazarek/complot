@@ -1,0 +1,1 @@
+("8.3" ta6le ("f83b5503119a3ef8a67feba38ca175ce34e3ae57" . "fe7ab2772ea36336482f91036ec5e61fce2b37b7") (collects #"complot" #"main.rkt") (collects #"racket" #"runtime-config.rkt") (indirect collects #"typed-racket" #"rep" #"type-rep.rkt"))
