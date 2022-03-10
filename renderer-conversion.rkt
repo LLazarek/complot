@@ -69,7 +69,7 @@
                               #:add-ticks? (if (or invert? (categorical? data y-col))
                                                bar-y-ticks?
                                                bar-x-ticks?)
-                              #:label (and add-legend? (or label y-col)))]
+                              #:label (and add-legend? (if-auto label y-col)))]
     [(stacked-bars (appearance color alpha size type labels)
                    major-col
                    minor-col

@@ -131,7 +131,7 @@
                                                 #:anchor [anchor 'auto])
   (point-label x y content anchor))
 (define-maker-with-appearance (make-points #:x x
-                                           #:y [y #f]
+                                           #:y y
                                            #:facet [facet #f]) ;; todo: support dot plots
   (points x y facet))
 (define-maker-with-appearance (make-line #:x x
