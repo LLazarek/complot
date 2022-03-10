@@ -252,7 +252,7 @@
                                      (make-stacked-bars #:x "major"
                                                         #:facet "minor"
                                                         #:y "money"))
-                ;; 15 before 30 because of sorting
+                ;; 15 before 30 because of alphabetic sorting by `minor`
                 '(("expenses" (20 15 30))
                   ("income" (100 10))))
   (check-equal? (let ([data (row-df [major minor money]

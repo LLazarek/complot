@@ -36,22 +36,38 @@
 (require syntax/parse/define
          (for-syntax racket/syntax))
 
-(define current-complot-printer (make-parameter (λ (thing port mode)
-                                                  (display @~a{#<complot @(object-name thing)>}
-                                                           port))))
+;; The printer parameter and its default, which gets overriden with one that
+;; uses `render` in `complot.rkt`
+(define current-complot-printer
+  (make-parameter (λ (thing port mode)
+                    ;; This @~a{...} syntax is like string interpolation in other languages
+                    ;; It creates a string that can embed code and values using @
+                    (display @~a{#<complot @(object-name thing)>}
+                             port))))
 
+;; The root / parent of all complot data structures, just used to attach the
+;; property that tells the racket runtime to use a custom printing function.
+(struct complot-printable ()
+  #:methods gen:custom-write
+  [(define (write-proc . args)
+     ;; The custom printing function just delegates to the current value of the
+     ;; printer parameter.
+     (apply (current-complot-printer) args))])
+
+;; A shared data structure declaration for holding appearance information
+;; The syntax of struct declarations is
+;; (struct <name> [<maybe-a-parent>] (<field-name> ...))
+;; This struct has no parents.
+;; Racket structs are very much like C structs in semantics
+;; (albeit with some extra bells and whistles).
 (struct appearance (color
                     alpha
                     size ; size for points, thickness for lines
                     type ; symbol for points, style for lines
-                    label
-                    ))
+                    label))
 
-(struct complot-printable ()
-  #:methods gen:custom-write
-  [(define (write-proc . args)
-     (apply (current-complot-printer) args))])
-
+;; --- Plot element structs ---
+;; This struct inherits from complot-printable, so gets the custom-printing property too
 (struct axis complot-printable (label
                                 ticks?
                                 major-ticks-every
@@ -63,11 +79,14 @@
                                 ensure-min-tick?
                                 ensure-max-tick?
                                 minimum-ticks))
+;; The x- and y-axis structs inherit from axis, getting all of its fields and properties
+;; They don't add any new ones.
 (struct x-axis axis ())
 (struct y-axis axis ())
 (struct legend (position type))
 (struct title complot-printable (text))
 
+;; --- Renderer structs ---
 (struct renderer complot-printable (appearance))
 (struct point-label renderer (x y content anchor))
 (struct points renderer (x-col y-col facet-col))
@@ -77,17 +96,22 @@
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max))
 
+;; --- The plot struct ---
 (struct plot complot-printable (data x-axis y-axis legend title renderers))
 
+;; Some convenience macros
 (define-simple-macro (plot-set a-plot field v)
   (struct-copy plot a-plot [field v]))
 (define-simple-macro (plot-update a-plot field f v)
   #:with get-field (format-id this-syntax "plot-~a" #'field)
   (struct-copy plot a-plot [field (f v (get-field a-plot))]))
 
+;; The plot constructor; this is renamed to just `plot` when exported by `complot.rkt`
 (define (make-plot data)
   (plot data #f #f #f #f empty))
 
+;; A convenience macro for defining the axis constructors, since they are identical
+;; except for the name and creating an x- or y-axis
 (define-simple-macro (define-axis-maker name axis)
   (define (name #:label [label #f]
                 #:ticks? [ticks? #t]
@@ -118,6 +142,8 @@
                      #:type [type 'new])
   (legend position type))
 
+;; A convenience macro for defining renderer constructors, since most of them have the same
+;; appearance options.
 (define-simple-macro (define-maker-with-appearance (id:id formals ...)
                        (s e ...))
   (define (id formals ...

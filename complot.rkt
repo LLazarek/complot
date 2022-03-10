@@ -32,9 +32,20 @@
          data-frame
          file/convertible)
 
+;; Function definition
+;; `. things` is a rest-argument. E.g. (with x 1 2 3) binds '(1 2 3) to things.
 (define (with a-plot . things)
   (define (with-one a-plot a-thing)
-    (match a-thing
+    (match a-thing ;; pattern matching
+      ;; every clause has the shape [<pattern> <body>], and match tries to match
+      ;; `a-thing` to each <pattern> (in turn), evaluating the <body> of the first
+      ;; such clause that matches.
+
+      ;; (? <predicate> pattern) is a pattern meaning: if the value satisfies <predicate>,
+      ;; match it against pattern.
+      ;; A pattern consisting of just an identifier means: match any value, and bind it
+      ;; to the identifier.
+
       [(? x-axis? axis)
        (plot-set a-plot x-axis axis)]
       [(? y-axis? axis)
@@ -56,18 +67,15 @@
      (apply with (with-one a-plot a-thing) more)]
     ['() a-plot]))
 
-(define (snoc x l) (append l (list x)))
-
-(define (should-add-new-style-legend? maybe-legend renderers)
-  (match* {maybe-legend renderers}
-    [{(legend 'auto 'new)
-      (list (or (? line?) (? points?) (? function?)) ...)}
-     #t]
-    [{_ _} #f]))
-
-(define (render-plot a-plot [outpath #f]
+;; The rendering function that turns a plot data structure into a visualization image.
+(define (render-plot a-plot
+                     ;; default argument
+                     [outpath #f]
+                     ;; keyword argument, kind of like Python's
                      #:width [width (plot:plot-width)]
                      #:height [height (plot:plot-height)])
+  ;; match-define matches a value against a pattern, binding identifiers in the
+  ;; pattern like `define`
   (match-define (plot data x-axis y-axis maybe-legend title renderers) a-plot)
   (match-define (list x-min x-max x-axis-plot:renderers)
     (if x-axis
@@ -85,16 +93,24 @@
                                    #:bar-y-ticks? (not (empty? y-axis-plot:renderers))
                                    #:legend? (and maybe-legend
                                                   (not new-style-legend?))))
-  (parameterize ([plot:plot-title title]
-                 [plot:plot-x-label (axis->label x-axis)]
-                 [plot:plot-y-label (axis->label y-axis)]
-                 [plot:plot-x-ticks plot:no-ticks]
-                 [plot:plot-y-ticks plot:no-ticks]
-                 [plot:plot-x-transform (first (axis->ticks+transform x-axis))]
-                 [plot:plot-y-transform (first (axis->ticks+transform y-axis))]
-                 [plot:plot-pen-color-map 'tab10]
+  ;; Many customizable aspects of the racket plot library are controlled through "parameters",
+  ;; which are racket's way of implementing dynamic binding (as opposed to lexical).
+  ;; A parameter is basically a mutable cell whose value can be temporarily set during
+  ;; the dynamic extent of a piece of code, and then reset upon exiting.
+  ;; The parameterize form does this temporary setting.
+  (parameterize (; Each clause has shape [<parameter> <value>]
+                 [plot:plot-title           title]
+                 [plot:plot-x-label         (axis->label x-axis)]
+                 [plot:plot-y-label         (axis->label y-axis)]
+                 [plot:plot-x-ticks         plot:no-ticks]
+                 [plot:plot-y-ticks         plot:no-ticks]
+                 [plot:plot-x-transform     (first (axis->ticks+transform x-axis))]
+                 [plot:plot-y-transform     (first (axis->ticks+transform y-axis))]
+                 [plot:plot-pen-color-map   'tab10]
                  [plot:plot-brush-color-map 'tab10])
-    (define p
+    (define the-plot-pict
+      ;; We boil down to racket plot's plotting function,
+      ;; with various settings configured by the parameters above and keyword arguments below.
       (plot:plot-pict (append (list x-axis-plot:renderers
                                     y-axis-plot:renderers)
                               plot:renderers)
@@ -107,22 +123,32 @@
                                         [else (plot:plot-legend-anchor)])
                       #:width width
                       #:height height))
-    (define p+legend
+    ;; Racket's plot function produces a `pict`, which represents an image.
+    ;; The pict library provides utilities for manipulating and combining images,
+    ;; which we use to add the new-style-legend -- since racket's plot doesn't
+    ;; support it.
+    (define plot-pict+legend
       (cond [new-style-legend?
-             (add-new-style-legend p a-plot)]
-            [else p]))
+             (add-new-style-legend the-plot-pict a-plot)]
+            [else the-plot-pict]))
     (if outpath
+        ;; Convert the pict into a common image format (based on the extension of the path),
+        ;; and write it to the file.
         (call-with-output-file outpath
           #:exists 'replace
-          (λ (out) (write-bytes (convert p+legend
+          (λ (out) (write-bytes (convert plot-pict+legend
                                          (match outpath
+                                           ;; The (regexp rx) pattern matches if
+                                           ;; the value is a string matching rx.
                                            [(regexp #rx"\\.png$") 'png-bytes]
                                            [(regexp #rx"\\.gif$") 'gif-bytes]
                                            [(regexp #rx"\\.svg$") 'svg-bytes]
                                            [(regexp #rx"\\.pdf$") 'pdf-bytes]))
                                 out)))
-        p+legend)))
+        plot-pict+legend)))
 
+;; More than just plots can be rendered, and the easiest way to do that is to
+;; add whatever it is to an empty plot and then render that!
 (define (render thing [outpath #f])
   (match thing
     [(? plot? p) (render-plot p outpath)]
@@ -244,6 +270,18 @@
                                               port)])))
 
 
+(define (snoc x l) (append l (list x)))
+
+(define (should-add-new-style-legend? maybe-legend renderers)
+  ;; match* matches multiple values at once to patterns
+  (match* {maybe-legend renderers}
+    [{(legend 'auto 'new)
+      (list (or (? line?) (? points?) (? function?)) ...)}
+     #t]
+    [{_ _} #f]))
+
+;; Uses the pict library utilities to add the legend markers on the side of the
+;; plot picture.
 (define (add-new-style-legend plot-pict a-plot)
   (define data (plot-data a-plot))
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
@@ -300,112 +338,116 @@
                  Columns: @(string-join (map ~s col-names) ", ")
                  }))
 
+;; module+ test creates a submodule, in this case for holding tests.
+;; The submodule doesn't run unless specifically asked for.
+;; These are rather poor tests since they require visual inspection.
+;; todo: automate these tests.
 (module+ test
-  (begin0 (void)
-    (make-plot (row-df [date price]
-                       1 20.50
-                       2 22
-                       3 20
-                       4 23
-                       5 26.34))
-    (with (make-plot (row-df [date price]
-                             1 20.50
-                             2 22
-                             3 20
-                             4 23
-                             5 26.34))
-          (make-points #:x "date" #:y "price" #:alpha 1)
-          (make-x-axis #:min 0 #:max 5)
-          (make-y-axis #:min 0 #:max 30))
-    (with (make-plot (row-df [date price]
-                             1 20.50
-                             2 22
-                             3 20
-                             4 23
-                             5 26.34))
-          (make-points #:x "date" #:y "price" #:alpha 1)
-          (make-line #:x "date" #:y "date")
-          (make-y-axis #:min 0 #:max 30))
-    (with (make-plot (row-df [date price ok?]
-                             1 20.50 "yes"
-                             2 22 "no"
-                             3 20 "no"
-                             4 23 "no"
-                             4 23 "yes"
-                             5 26.34 "kinda"))
-          (make-histogram #:x "ok?")
-          (make-x-axis)
-          (make-y-axis))
-    (with (make-plot (row-df [date price ok?]
-                             1 20.50 "yes"
-                             2 22 "no"
-                             3 20 "no"
-                             4 23 "no"
-                             4 23 "yes"
-                             5 26.34 "kinda"))
-          (make-histogram #:x "ok?")
-          (make-x-axis)
-          (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
-    (with (make-plot (row-df [date price ok?]
-                             1 20.50 "yes"
-                             2 22 "no"
-                             3 20 "no"
-                             4 23 "no"
-                             4 23 "yes"
-                             5 26.34 "kinda"))
-          (make-histogram #:x "ok?")
-          (make-x-axis)
-          (make-y-axis #:min 0 #:major-tick-every #f
-                       #:minimum-ticks '(1 1.5)
-                       #:ensure-max-tick? #f
-                       #:ensure-min-tick? #f))
-    (with (make-plot (row-df [major minor money]
-                             "expenses" "food" 20
-                             "expenses" "transport" 30
-                             "expenses" "laundry" 10
-                             "expenses" "laundry" 5
-                             "income" "paycheck" 100
-                             "income" "side-job" 10))
-          (make-stacked-bars #:x "major"
-                             #:facet "minor"
-                             #:y "money"
-                             #:labels? #f)
-          (make-x-axis)
-          (make-y-axis #:min 0))
-    (with (make-plot (row-df [major minor money]
-                             "expenses" "food" 20
-                             "expenses" "transport" 30
-                             "expenses" "laundry" 10
-                             "expenses" "laundry" 5
-                             "income" "paycheck" 100
-                             "income" "side-job" 10))
-          (make-stacked-bars #:x "major"
-                             #:facet "minor"
-                             #:y "money")
-          (make-x-axis)
-          (make-y-axis #:min 0))
-    (with (make-plot (row-df [a] 5))
-          (make-function (λ (x) (expt 2 x))
-                         #:min 1 #:max 100)
-          (make-x-axis #:min 1 #:max 100)
-          (make-y-axis #:layout 'log))
+  ;; row-df is a form for writing literal data tables
+  (make-plot (row-df [date price]
+                     1 20.50
+                     2 22
+                     3 20
+                     4 23
+                     5 26.34))
+  (with (make-plot (row-df [date price]
+                           1 20.50
+                           2 22
+                           3 20
+                           4 23
+                           5 26.34))
+        (make-points #:x "date" #:y "price" #:alpha 1)
+        (make-x-axis #:min 0 #:max 5)
+        (make-y-axis #:min 0 #:max 30))
+  (with (make-plot (row-df [date price]
+                           1 20.50
+                           2 22
+                           3 20
+                           4 23
+                           5 26.34))
+        (make-points #:x "date" #:y "price" #:alpha 1)
+        (make-line #:x "date" #:y "date")
+        (make-y-axis #:min 0 #:max 30))
+  (with (make-plot (row-df [date price ok?]
+                           1 20.50 "yes"
+                           2 22 "no"
+                           3 20 "no"
+                           4 23 "no"
+                           4 23 "yes"
+                           5 26.34 "kinda"))
+        (make-histogram #:x "ok?")
+        (make-x-axis)
+        (make-y-axis))
+  (with (make-plot (row-df [date price ok?]
+                           1 20.50 "yes"
+                           2 22 "no"
+                           3 20 "no"
+                           4 23 "no"
+                           4 23 "yes"
+                           5 26.34 "kinda"))
+        (make-histogram #:x "ok?")
+        (make-x-axis)
+        (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
+  (with (make-plot (row-df [date price ok?]
+                           1 20.50 "yes"
+                           2 22 "no"
+                           3 20 "no"
+                           4 23 "no"
+                           4 23 "yes"
+                           5 26.34 "kinda"))
+        (make-histogram #:x "ok?")
+        (make-x-axis)
+        (make-y-axis #:min 0 #:major-tick-every #f
+                     #:minimum-ticks '(1 1.5)
+                     #:ensure-max-tick? #f
+                     #:ensure-min-tick? #f))
+  (with (make-plot (row-df [major minor money]
+                           "expenses" "food" 20
+                           "expenses" "transport" 30
+                           "expenses" "laundry" 10
+                           "expenses" "laundry" 5
+                           "income" "paycheck" 100
+                           "income" "side-job" 10))
+        (make-stacked-bars #:x "major"
+                           #:facet "minor"
+                           #:y "money"
+                           #:labels? #f)
+        (make-x-axis)
+        (make-y-axis #:min 0))
+  (with (make-plot (row-df [major minor money]
+                           "expenses" "food" 20
+                           "expenses" "transport" 30
+                           "expenses" "laundry" 10
+                           "expenses" "laundry" 5
+                           "income" "paycheck" 100
+                           "income" "side-job" 10))
+        (make-stacked-bars #:x "major"
+                           #:facet "minor"
+                           #:y "money")
+        (make-x-axis)
+        (make-y-axis #:min 0))
+  (with (make-plot (row-df [a] 5))
+        (make-function (λ (x) (expt 2 x))
+                       #:min 1 #:max 100)
+        (make-x-axis #:min 1 #:max 100)
+        (make-y-axis #:layout 'log))
 
-    (with (make-plot (row-df [x y y2]
-                             1 5 2
-                             2 3 2
-                             3 6 5))
-          (make-x-axis #:min 0)
-          (make-y-axis #:min 0 #:max 10)
-          (make-bars #:x "x" #:y "y2" #:label "gas")
-          (make-legend #:type 'new))
-    (with (make-plot (row-df [x y y2]
-                             1 5 2
-                             2 3 2
-                             3 6 5))
-          (make-x-axis #:min 0)
-          (make-y-axis #:min 0 #:max 10)
-          (make-line #:x "x" #:y "y2" #:label "gas")
-          (make-legend #:type 'new)))
+  (with (make-plot (row-df [x y y2]
+                           1 5 2
+                           2 3 2
+                           3 6 5))
+        (make-x-axis #:min 0)
+        (make-y-axis #:min 0 #:max 10)
+        (make-bars #:x "x" #:y "y2" #:label "gas")
+        (make-legend #:type 'new))
+  (render (with (make-plot (row-df [x y y2]
+                                   1 5 2
+                                   2 3 2
+                                   3 6 5))
+                (make-x-axis #:min 0)
+                (make-y-axis #:min 0 #:max 10)
+                (make-line #:x "x" #:y "y2" #:label "gas")
+                (make-legend #:type 'new)))
 
   (render (with (make-plot (row-df [date price categ]
                                    1 20.50 1
