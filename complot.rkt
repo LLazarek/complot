@@ -4,9 +4,10 @@
 todo:
 - ✓ better default color scheme
 - ✓ support repl rendering instead of gui
-- *improve error reporting*; e.g. passing `x-axis` to `with` rather than `(x-axis)`, passing non-numeric values for lines and plots etc.
+- ✓ *improve error reporting*; e.g. passing `x-axis` to `with` rather than `(x-axis)`, passing non-numeric values for lines and plots etc.
 - stacked area plots
 - handle overlapping new-style legend labels
+- axis formats (in particular: dates and times)
 - ghost axes? ie set bounds of plot w/o rendering an axis
 - map plots? https://docs.racket-lang.org/map-widget/index.html
 |#
@@ -36,6 +37,7 @@ todo:
          "renderer-conversion.rkt"
          "axis-conversion.rkt"
          "util.rkt"
+         "error-reporting.rkt"
          (prefix-in plot: plot)
          (prefix-in graphite: graphite)
          (prefix-in pict: pict)
@@ -56,7 +58,12 @@ todo:
        (plot-set a-plot title text)]
 
       [(? renderer? r)
-       (plot-update a-plot renderers snoc r)]))
+       (plot-update a-plot renderers snoc r)]
+
+      [something-else
+       (report-non-complot-argument! a-plot something-else "add-to (aka with)")]))
+  (unless (plot? a-plot)
+    (report-non-complot-argument! a-plot #f "add-to (aka with)"))
   (match things
     [(cons a-thing more)
      (apply with (with-one a-plot a-thing) more)]
@@ -130,8 +137,6 @@ todo:
         p+legend)))
 
 (define (render thing [outpath #f])
-  ;; (pretty-write (continuation-mark-set->context (current-continuation-marks)))
-  ;; (newline)
   (match thing
     [(? plot? p) (render-plot p outpath)]
     [(? x-axis? a) (render-plot (with (make-plot (row-df [x y]
@@ -208,7 +213,11 @@ todo:
     [(? title? t) (pict:text t)]
     [(? legend?)  (raise-user-error
                    'complot
-                   "Can't render a legend by itself: legends need a renderer to describe")]))
+                   "Can't render a legend by itself: legends need a renderer to describe")]
+    [something-else
+     (report-non-complot-argument! (make-plot #f)
+                                   something-else
+                                   "save-to-file (aka render)")]))
 
 ;; Going through this parameter just uses state to break the circularity of
 ;; `render` needing the structs, and the struct printer needing `render`

@@ -6,6 +6,7 @@
 
 (require "structs.rkt"
          "util.rkt"
+         "error-reporting.rkt"
          (prefix-in plot: plot)
          data-frame
          math/statistics
@@ -15,9 +16,11 @@
                                       #:bar-x-ticks? bar-x-ticks?
                                       #:bar-y-ticks? bar-y-ticks?
                                       #:legend? add-legend?)
+  (define raw-data (renderer->plot:data data renderer))
+  (check-plot:data-types! renderer data raw-data)
   (match renderer
     [(point-label (appearance color alpha size type label) x y content anchor)
-     (plot:point-label (renderer->plot:data data renderer)
+     (plot:point-label raw-data
                        content
                        #:color (if-auto color (plot:plot-foreground))
                        #:alpha (if-auto alpha (plot:label-alpha))
@@ -43,21 +46,21 @@
                                                       [(vector v _ ...) (~a v)]
                                                       [else #f]))))]
            [else
-            (plot:points (renderer->plot:data data renderer)
+            (plot:points raw-data
                          #:color (if-auto color (plot:point-color))
                          #:alpha (if-auto alpha (plot:point-alpha))
                          #:size (if-auto size (plot:point-size))
                          #:sym (if-auto type (plot:point-sym))
                          #:label (and add-legend? (or label y-col)))])]
     [(line (appearance color alpha size type label) x-col y-col)
-     (plot:lines (renderer->plot:data data renderer)
+     (plot:lines raw-data
                  #:color (if-auto color (plot:line-color))
                  #:alpha (if-auto alpha (plot:line-alpha))
                  #:width (if-auto size (plot:line-width))
                  #:style (if-auto type (plot:line-style))
                  #:label (and add-legend? (or label y-col)))]
     [(bars (appearance color alpha size type label) x-col y-col invert?)
-     (plot:discrete-histogram (renderer->plot:data data renderer)
+     (plot:discrete-histogram raw-data
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
                               #:line-width (if-auto size (plot:rectangle-line-width))
@@ -74,7 +77,6 @@
                    invert?
                    _
                    labels?)
-     (define raw-data (renderer->plot:data data renderer))
      (list (plot:stacked-histogram raw-data
                                    #:colors (if-auto color (plot:stacked-histogram-colors))
                                    #:alphas (list (if-auto alpha (plot:stacked-histogram-alphas)))
@@ -96,7 +98,7 @@
                                         invert?)
                empty))]
     [(histogram (appearance color alpha size type label) x-col bins invert?)
-     (plot:discrete-histogram (renderer->plot:data data renderer)
+     (plot:discrete-histogram raw-data
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
                               #:line-width (if-auto size (plot:rectangle-line-width))

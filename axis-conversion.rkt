@@ -25,7 +25,6 @@
                    data
                    renderers))
 (define (axis->plot:axis an-axis make-plot:axis data renderers)
-  (displayln @~a{Called with @make-plot:axis})
   (define-values {the-min the-max this-axis-is-categorical?}
     (cond [(and (axis-min an-axis)
                 (axis-max an-axis))
