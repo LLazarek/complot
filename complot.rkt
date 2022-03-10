@@ -27,7 +27,6 @@
          "util.rkt"
          "error-reporting.rkt"
          (prefix-in plot: plot)
-         (prefix-in graphite: graphite)
          (prefix-in pict: pict)
          sawzall
          data-frame

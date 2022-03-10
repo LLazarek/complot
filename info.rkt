@@ -8,6 +8,5 @@
                "sawzall"
                "plot-gui-lib"
                "plot-lib"
-               "graphite-lib"
                "pict-lib"
                "math-lib"))
