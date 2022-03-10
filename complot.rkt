@@ -1,17 +1,5 @@
 #lang at-exp racket
 
-#|
-todo:
-- ✓ better default color scheme
-- ✓ support repl rendering instead of gui
-- ✓ *improve error reporting*; e.g. passing `x-axis` to `with` rather than `(x-axis)`, passing non-numeric values for lines and plots etc.
-- stacked area plots
-- handle overlapping new-style legend labels
-- axis formats (in particular: dates and times)
-- ghost axes? ie set bounds of plot w/o rendering an axis
-- map plots? https://docs.racket-lang.org/map-widget/index.html
-|#
-
 (provide (rename-out [make-plot          plot]
                      [make-x-axis        x-axis]
                      [make-y-axis        y-axis]
