@@ -395,6 +395,17 @@ todo:
           (make-x-axis)
           (make-legend #:type 'old)))
 
+  (render (with (make-plot (row-df [date price ok?]
+                              1 20.50 "yes"
+                              2 22 "no"
+                              3 20 "no"
+                              4 23 "no"
+                              4 23 "yes"
+                              5 26.34 "kinda"))
+                (make-histogram #:x "date")
+                (make-x-axis)
+                (make-y-axis)))
+
 
   (make-x-axis)
   (make-y-axis))

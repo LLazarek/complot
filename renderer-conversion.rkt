@@ -85,7 +85,7 @@
                                                     bar-y-ticks?
                                                     bar-x-ticks?)
                                    #:labels (if legend?
-                                                labels
+                                                (if-auto labels '(#f)) ;; lltodo
                                                 '(#f))
                                    )
            (if labels?
@@ -171,20 +171,26 @@
              (for/list ([minor-col-group-df (in-list (split-with major-col-group-df minor-col))])
                (apply aggregator (vector->list (df-select minor-col-group-df value-col))))))]
     [(histogram _ col bins invert?)
-     (cond [(categorical? data col)
+     (define the-values (vector->list (df-select data col)))
+     (cond [(or (categorical? data col)
+                (< (length (remove-duplicates the-values)) bins))
             (define frequencies
-              (samples->hash (df-select data col)))
-            (hash-map frequencies list)]
+              (samples->hash the-values))
+            (define histogram-data (hash-map frequencies list))
+            (if (categorical? data col)
+                histogram-data
+                (sort histogram-data < #:key first))]
            [else
-            (define the-values (vector->list (df-select data col)))
+            ;; todo: improvement, this should be able to bin based on the axis bounds?
+            ;; or have a seperate argument to say the bounds of binning.
             (define values-min (apply min the-values))
             (define values-max (apply max the-values))
             (define bin-bounds (range values-min
                                       values-max
                                       (/ (- values-max values-min) bins)))
             (for/list ([a-bin (bin-samples bin-bounds <= the-values)])
-              (list (/ (- (sample-bin-max a-bin) (sample-bin-min a-bin)) 2)
-                    (length (sample-bin-values a-bin))))])]
+                (list (sample-bin-min a-bin)
+                      (length (sample-bin-values a-bin))))])]
     [(function _ f min max)
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
        (list x (f x)))]))
@@ -268,4 +274,78 @@
                   (0.5 55/2 "laundry")
                   (0.5 10 "food")
                   (1.5 105 "side-job")
-                  (1.5 50 "paycheck"))))
+                  (1.5 50 "paycheck")))
+
+  (check-match (renderer->plot:data (row-df [date price ok?]
+                                            1 20.50 "yes"
+                                            2 22 "no"
+                                            3 20 "no"
+                                            4 23 "no"
+                                            4 23 "yes"
+                                            5 26.34 "kinda")
+                                    (make-histogram #:x "date"))
+               (list '(1 1)
+                     '(2 1)
+                     '(3 1)
+                     '(4 2)
+                     '(5 1)))
+  (check-match (renderer->plot:data (row-df [date price ok?]
+                                            1 20.50 "yes"
+                                            2 22 "no"
+                                            3 20 "no"
+                                            4 23 "no"
+                                            4 23 "yes"
+                                            5 26.34 "kinda")
+                                    (make-histogram #:x "price"))
+               (list '(20 1)
+                     '(20.50 1)
+                     '(22 1)
+                     '(23 2)
+                     '(26.34 1)))
+  (check-match (renderer->plot:data (row-df [day "price of A" "price of B"]
+                                            1 10 15
+                                            10 11 16
+                                            11 12 17
+                                            12 15 16
+                                            13 17 16
+                                            13 18 15
+                                            14 25 20
+                                            15 26 18
+                                            16 11 16
+                                            17 12 17
+                                            18 15 16
+                                            19 17 16
+                                            19 18 15
+                                            20 25 20
+                                            30 26 18
+
+                                            1 10 15
+                                            10 11 16
+                                            11 12 17
+                                            12 15 16
+                                            13 17 16
+                                            13 18 15
+                                            14 25 20
+                                            15 26 18
+                                            16 11 16
+                                            17 12 17
+                                            18 15 16
+                                            19 17 16
+                                            19 18 15
+                                            20 25 20
+                                            30 26 18
+                                            )
+                                    (make-histogram #:x "day"))
+               (list '(1 2)
+                     '(10 2)
+                     '(11 2)
+                     '(12 2)
+                     '(13 4)
+                     '(14 2)
+                     '(15 2)
+                     '(16 2)
+                     '(17 2)
+                     '(18 2)
+                     '(19 4)
+                     '(20 2)
+                     '(30 2))))
