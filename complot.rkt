@@ -409,7 +409,7 @@
                            "income" "paycheck" 100
                            "income" "side-job" 10))
         (make-stacked-bars #:x "major"
-                           #:facet "minor"
+                           #:group-by "minor"
                            #:y "money"
                            #:labels? #f)
         (make-x-axis)
@@ -422,7 +422,7 @@
                            "income" "paycheck" 100
                            "income" "side-job" 10))
         (make-stacked-bars #:x "major"
-                           #:facet "minor"
+                           #:group-by "minor"
                            #:y "money")
         (make-x-axis)
         (make-y-axis #:min 0))
@@ -473,7 +473,7 @@
                              2 20 2
                              2 23 1
                              2 26.34 2))
-          (make-stacked-bars #:x "date" #:y "price" #:facet "categ")
+          (make-stacked-bars #:x "date" #:y "price" #:group-by "categ")
           (make-y-axis)
           (make-x-axis)
           (make-legend #:type 'old)))
@@ -483,7 +483,7 @@
                              2 20 2
                              2 23 1
                              2 26.34 2))
-          (make-stacked-bars #:x "date" #:y "price" #:facet "categ" #:invert? #t)
+          (make-stacked-bars #:x "date" #:y "price" #:group-by "categ" #:invert? #t)
           (make-y-axis)
           (make-x-axis)
           (make-legend #:type 'old)))

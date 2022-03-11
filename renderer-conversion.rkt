@@ -27,22 +27,22 @@
                        #:point-size (if-auto size (plot:label-point-size))
                        #:point-sym (if-auto type 'fullcircle)
                        #:anchor anchor)]
-    [(points (appearance color alpha size type label) x-col y-col facet-col)
-     (cond [facet-col
-            (define facet-groups (split-with data facet-col))
-            (for/list ([facet-group-data facet-groups]
-                       [facet-color (in-sequences
+    [(points (appearance color alpha size type label) x-col y-col group-col)
+     (cond [group-col
+            (define groups (split-with data group-col))
+            (for/list ([group-data (in-list groups)]
+                       [group-color (in-sequences
                                      (if (list? color)
                                          color
                                          (list color))
                                      (in-naturals))])
-              (define facet-col-value (df-select facet-group-data facet-col))
-              (plot:points (renderer->plot:data facet-group-data renderer)
-                           #:color (if-auto facet-color (plot:point-color))
+              (define group-col-value (df-select group-data group-col))
+              (plot:points (renderer->plot:data group-data renderer)
+                           #:color (if-auto group-color (plot:point-color))
                            #:alpha (if-auto alpha (plot:point-alpha))
                            #:size (if-auto size (plot:point-size))
                            #:sym (if-auto type (plot:point-sym))
-                           #:label (and add-legend? (match facet-col-value
+                           #:label (and add-legend? (match group-col-value
                                                       [(vector v _ ...) (~a v)]
                                                       [else #f]))))]
            [else
@@ -250,7 +250,7 @@
                                              "income" "paycheck" 100
                                              "income" "side-job" 10)
                                      (make-stacked-bars #:x "major"
-                                                        #:facet "minor"
+                                                        #:group-by "minor"
                                                         #:y "money"))
                 ;; 15 before 30 because of alphabetic sorting by `minor`
                 '(("expenses" (20 15 30))
@@ -267,7 +267,7 @@
                    (renderer->plot:data
                     data
                     (make-stacked-bars #:x "major"
-                                       #:facet "minor"
+                                       #:group-by "minor"
                                        #:y "money"
                                        #:labels? #t))
                    "major"

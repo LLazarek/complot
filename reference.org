@@ -64,8 +64,8 @@ This is the full list of primitive forms, with each form's specification.
     * =#:colors <listof string or symbol or number>=
     * =#:alpha <number in [0, 1]>=
     * =#:invert? <boolean>= - whether to depict the bars horizontally instead of vertically
-    * =#:aggregate <function>= - how to aggregate values within the same facet. Default: sum
-    * =#:labels? <boolean>= - whether to label each bar segment with its facet value.
+    * =#:aggregate <function>= - how to aggregate values within the same group. Default: sum
+    * =#:labels? <boolean>= - whether to label each bar segment with its group value.
 
   + =(histogram #:x <string> option ...)= renders a frequency histogram of a single logical axis. Supported keywords:
     * =#:bins <natural>= - how many bins to split the data into

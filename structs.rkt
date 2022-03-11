@@ -89,10 +89,10 @@
 ;; --- Renderer structs ---
 (struct renderer complot-printable (appearance))
 (struct point-label renderer (x y content anchor))
-(struct points renderer (x-col y-col facet-col))
+(struct points renderer (x-col y-col group-col))
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col invert?))
-(struct stacked-bars renderer (x-col facet-col y-col invert? aggregator labels?))
+(struct stacked-bars renderer (x-col group-col y-col invert? aggregator labels?))
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max))
 
@@ -158,8 +158,8 @@
   (point-label x y content anchor))
 (define-maker-with-appearance (make-points #:x x
                                            #:y y
-                                           #:facet [facet #f]) ;; todo: support dot plots
-  (points x y facet))
+                                           #:group-by [group-col #f]) ;; todo: support dot plots
+  (points x y group-col))
 (define-maker-with-appearance (make-line #:x x
                                          #:y y)
   (line x y))
@@ -168,7 +168,7 @@
                                          #:invert? [invert? #f])
   (bars x y invert?))
 (define (make-stacked-bars #:x x-col
-                           #:facet facet-col
+                           #:group-by group-col
                            #:y y-col
                            #:colors [colors 'auto]
                            #:alpha [alpha 1]
@@ -177,7 +177,7 @@
                            #:labels? [labels? #t])
   (stacked-bars (appearance colors alpha 'auto 'auto 'auto)
                 x-col
-                facet-col
+                group-col
                 y-col
                 invert?
                 aggregator
