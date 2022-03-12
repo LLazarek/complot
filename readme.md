@@ -7,7 +7,7 @@ Outline
 2. Installation
 3. Tutorial
 4. complot's architecture
-5. Suggestions for reading this code to evaluate it (e.g. if your name is Jacob)
+5. Suggestions for reading this code to evaluate it (e.g. if your name is Jacob or Uri)
 
 Introduction
 ------------
@@ -23,16 +23,22 @@ The goals/purpose of this design is:
 
 Installation
 ------------
-Install Racket by getting the installer from https://download.racket-lang.org/ and running it with `sh`.
-If you're just trying complot out, you probably want to install Racket in a local directory (e.g. `Downloads/racket`) and accept the installer default to **not** create any links; that way you can uninstall it by simply deleting the directory.
-Then enter the complot directory and install complot with the racket package manager:
+Install Racket by getting the installer from https://download.racket-lang.org/ and following the instructions.
+On linux the installer gives the option to install Racket in a local directory (e.g. `Downloads/racket`); that's a convenient option that allows to uninstall it by simply deleting the directory.
+Unfortunately I don't know the details of whether that's possible on mac.
+
+After installing racket, in the racket directory there should be a `bin/` directory containing, among other things, the executables `racket`, `raco`, and `drracket`.
+
+To install complot itself, enter the complot directory and install with the racket package manager:
 
 ```
 cd complot/
+# if the racket binary directory is in your $PATH then just `raco` should work too
 <path/to/racket-directory>/bin/raco pkg install
 ```
 
-This will download and install complot's dependencies, and once it completes you are ready to go.
+Answer "y" to the prompts, and `raco` will download and install complot's dependencies as well.
+Once it completes you are ready to go.
 
 If you're not sure where to start, consider checking out the tutorial below, or the examples in `complot/examples/`; you may also want to browse the language reference in `reference.md`.
 
@@ -169,8 +175,8 @@ Finally, `main.rkt` is simply a layer over `complot.rkt` that serves the purpose
 Since Racket's protocol for these forms looks for a file named `main.rkt` in the package directory.
 
 
-Suggestions for reading this code to evaluate it (e.g. if your name is Jacob)
------------------------------------------------------------------------------
+Suggestions for reading this code to evaluate it (e.g. if your name is Jacob or Uri)
+------------------------------------------------------------------------------------
 I suggest first reading the preceding section describing the architecture of complot.
 After that, I suggest starting with `complot.rkt`, which is the entry point of the system and implements the high level features of the language.
 I have also annotated it extensively to explain racket syntax and features that I use.
