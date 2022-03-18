@@ -23,7 +23,10 @@
     [{(? stacked-bars?)
       (list (list _ (list (? real?) ...)) ...)}
      (void)]
-    ;; histogram isn't here, it can't be wrong!
+    [{(or (? histogram?)
+          (? function?))
+      _}
+     (void)]
     ;; Others: error
     [{(? point-label?) (list x y)}
      (error 'complot
@@ -60,14 +63,14 @@
                 There might be a problem in the data set, or you might have put a mistaken column
                 for #:y.
                 })]
-    [{(stacked-bars _ x-col facet-col y-col _ _ _)
+    [{(stacked-bars _ x-col group-col y-col _ _ _)
       (list-no-order (list x-value (and (not (list (? real?) ...)) bad-group-vals))
                      _ ...)}
      (error 'complot
             @~a{
                 Error: stacked-bars can only use real number data for its #:y values, but I got
                 a value from the data for the stacked-bars with
-                #:x @~s[x-col] and #:y @~s[y-col] and #:facet @~s[facet-col] for which the y values
+                #:x @~s[x-col] and #:y @~s[y-col] and #:group-by @~s[group-col] for which the y values
                 are something else:
                 x: @~s[x-value]
                 y-values: @~s[bad-group-vals]

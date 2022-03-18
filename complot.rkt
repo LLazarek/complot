@@ -27,7 +27,6 @@
          "util.rkt"
          "error-reporting.rkt"
          (prefix-in plot: plot)
-         (prefix-in graphite: graphite)
          (prefix-in pict: pict)
          sawzall
          data-frame
@@ -57,16 +56,8 @@
      (apply with (with-one a-plot a-thing) more)]
     ['() a-plot]))
 
-(define (snoc x l) (append l (list x)))
-
-(define (should-add-new-style-legend? maybe-legend renderers)
-  (match* {maybe-legend renderers}
-    [{(legend 'auto 'new)
-      (list (or (? line?) (? points?) (? function?)) ...)}
-     #t]
-    [{_ _} #f]))
-
-(define (render-plot a-plot [outpath #f]
+(define (render-plot a-plot
+                     [outpath #f]
                      #:width [width (plot:plot-width)]
                      #:height [height (plot:plot-height)])
   (match-define (plot data x-axis y-axis maybe-legend title renderers) a-plot)
@@ -86,16 +77,16 @@
                                    #:bar-y-ticks? (not (empty? y-axis-plot:renderers))
                                    #:legend? (and maybe-legend
                                                   (not new-style-legend?))))
-  (parameterize ([plot:plot-title title]
-                 [plot:plot-x-label (axis->label x-axis)]
-                 [plot:plot-y-label (axis->label y-axis)]
-                 [plot:plot-x-ticks plot:no-ticks]
-                 [plot:plot-y-ticks plot:no-ticks]
-                 [plot:plot-x-transform (first (axis->ticks+transform x-axis))]
-                 [plot:plot-y-transform (first (axis->ticks+transform y-axis))]
-                 [plot:plot-pen-color-map 'tab10]
+  (parameterize ([plot:plot-title           title]
+                 [plot:plot-x-label         (axis->label x-axis)]
+                 [plot:plot-y-label         (axis->label y-axis)]
+                 [plot:plot-x-ticks         plot:no-ticks]
+                 [plot:plot-y-ticks         plot:no-ticks]
+                 [plot:plot-x-transform     (first (axis->ticks+transform x-axis))]
+                 [plot:plot-y-transform     (first (axis->ticks+transform y-axis))]
+                 [plot:plot-pen-color-map   'tab10]
                  [plot:plot-brush-color-map 'tab10])
-    (define p
+    (define the-plot-pict
       (plot:plot-pict (append (list x-axis-plot:renderers
                                     y-axis-plot:renderers)
                               plot:renderers)
@@ -108,21 +99,21 @@
                                         [else (plot:plot-legend-anchor)])
                       #:width width
                       #:height height))
-    (define p+legend
+    (define plot-pict+legend
       (cond [new-style-legend?
-             (add-new-style-legend p a-plot)]
-            [else p]))
+             (add-new-style-legend the-plot-pict a-plot)]
+            [else the-plot-pict]))
     (if outpath
         (call-with-output-file outpath
           #:exists 'replace
-          (λ (out) (write-bytes (convert p+legend
+          (λ (out) (write-bytes (convert plot-pict+legend
                                          (match outpath
                                            [(regexp #rx"\\.png$") 'png-bytes]
                                            [(regexp #rx"\\.gif$") 'gif-bytes]
                                            [(regexp #rx"\\.svg$") 'svg-bytes]
                                            [(regexp #rx"\\.pdf$") 'pdf-bytes]))
                                 out)))
-        p+legend)))
+        plot-pict+legend)))
 
 (define (render thing [outpath #f])
   (match thing
@@ -207,11 +198,28 @@
                                    something-else
                                    "save-to-file (aka render)")]))
 
-;; Going through this parameter just uses state to break the circularity of
-;; `render` needing the structs, and the struct printer needing `render`
+
+
+;; A little bit of trickery here to support rendering plots and elements in the REPL.
+;; `structs.rkt` defines the parameter `current-complot-printer` to hold the function
+;; which "prints" complot data structures.
+;; The default function used in `structs.rkt` just prints some filler.
+;; Here, we overwrite that default to call `render` instead.
+;;
+;; Going through this parameter is effectively using state to break the
+;; circularity of `render` needing the structs module, and the struct printer
+;; needing to be defined alongside the data structures in the structs module,
+;; so it can't refer directly to `render`.
+;;
+;; Finally, we need a second parameter to prevent an infinite error loop if
+;; an error should ever arise in the process of trying to print a complot thing,
+;; and that error tries to print out the same complot thing.
+(define currently-printing-complot-thing? (make-parameter #f))
 (current-complot-printer (λ (thing port mode)
-                           ;; todo: somehow there's a bug where in the REPL a
-                           ;; single plot is being rendered twice.
+                           ;; todo: there's a bug where in the REPL a single
+                           ;; plot is often being rendered twice and the first
+                           ;; one being thrown away. It doesn't affect behavior
+                           ;; but is strange, and haven't had time to hunt it down.
                            (define recur
                              (match mode
                                [#t write]
@@ -220,11 +228,22 @@
                            (cond [(and #;(port-writes-special? port)
                                        ;; ^ rendering in racket-mode repl seems to not want
                                        ;; this condition
-                                       mode)
-                                  (recur (render thing) port)]
+                                       mode
+                                       (not (currently-printing-complot-thing?)))
+                                  (parameterize ([currently-printing-complot-thing? #t])
+                                    (recur (render thing) port))]
                                  [else (recur @~a{#<complot @(object-name thing)>}
                                               port)])))
 
+
+(define (snoc x l) (append l (list x)))
+
+(define (should-add-new-style-legend? maybe-legend renderers)
+  (match* {maybe-legend renderers}
+    [{(legend 'auto 'new)
+      (list (or (? line?) (? points?) (? function?)) ...)}
+     #t]
+    [{_ _} #f]))
 
 (define (add-new-style-legend plot-pict a-plot)
   (define data (plot-data a-plot))
@@ -282,112 +301,113 @@
                  Columns: @(string-join (map ~s col-names) ", ")
                  }))
 
+;; These are rather poor tests since they require visual inspection.
+;; todo: automate these tests.
 (module+ test
-  (begin0 (void)
-    (make-plot (row-df [date price]
-                       1 20.50
-                       2 22
-                       3 20
-                       4 23
-                       5 26.34))
-    (with (make-plot (row-df [date price]
-                             1 20.50
-                             2 22
-                             3 20
-                             4 23
-                             5 26.34))
-          (make-points #:x "date" #:y "price" #:alpha 1)
-          (make-x-axis #:min 0 #:max 5)
-          (make-y-axis #:min 0 #:max 30))
-    (with (make-plot (row-df [date price]
-                             1 20.50
-                             2 22
-                             3 20
-                             4 23
-                             5 26.34))
-          (make-points #:x "date" #:y "price" #:alpha 1)
-          (make-line #:x "date" #:y "date")
-          (make-y-axis #:min 0 #:max 30))
-    (with (make-plot (row-df [date price ok?]
-                             1 20.50 "yes"
-                             2 22 "no"
-                             3 20 "no"
-                             4 23 "no"
-                             4 23 "yes"
-                             5 26.34 "kinda"))
-          (make-histogram #:x "ok?")
-          (make-x-axis)
-          (make-y-axis))
-    (with (make-plot (row-df [date price ok?]
-                             1 20.50 "yes"
-                             2 22 "no"
-                             3 20 "no"
-                             4 23 "no"
-                             4 23 "yes"
-                             5 26.34 "kinda"))
-          (make-histogram #:x "ok?")
-          (make-x-axis)
-          (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
-    (with (make-plot (row-df [date price ok?]
-                             1 20.50 "yes"
-                             2 22 "no"
-                             3 20 "no"
-                             4 23 "no"
-                             4 23 "yes"
-                             5 26.34 "kinda"))
-          (make-histogram #:x "ok?")
-          (make-x-axis)
-          (make-y-axis #:min 0 #:major-tick-every #f
-                       #:minimum-ticks '(1 1.5)
-                       #:ensure-max-tick? #f
-                       #:ensure-min-tick? #f))
-    (with (make-plot (row-df [major minor money]
-                             "expenses" "food" 20
-                             "expenses" "transport" 30
-                             "expenses" "laundry" 10
-                             "expenses" "laundry" 5
-                             "income" "paycheck" 100
-                             "income" "side-job" 10))
-          (make-stacked-bars #:x "major"
-                             #:facet "minor"
-                             #:y "money"
-                             #:labels? #f)
-          (make-x-axis)
-          (make-y-axis #:min 0))
-    (with (make-plot (row-df [major minor money]
-                             "expenses" "food" 20
-                             "expenses" "transport" 30
-                             "expenses" "laundry" 10
-                             "expenses" "laundry" 5
-                             "income" "paycheck" 100
-                             "income" "side-job" 10))
-          (make-stacked-bars #:x "major"
-                             #:facet "minor"
-                             #:y "money")
-          (make-x-axis)
-          (make-y-axis #:min 0))
-    (with (make-plot (row-df [a] 5))
-          (make-function (λ (x) (expt 2 x))
-                         #:min 1 #:max 100)
-          (make-x-axis #:min 1 #:max 100)
-          (make-y-axis #:layout 'log))
+  (make-plot (row-df [date price]
+                     1 20.50
+                     2 22
+                     3 20
+                     4 23
+                     5 26.34))
+  (with (make-plot (row-df [date price]
+                           1 20.50
+                           2 22
+                           3 20
+                           4 23
+                           5 26.34))
+        (make-points #:x "date" #:y "price" #:alpha 1)
+        (make-x-axis #:min 0 #:max 5)
+        (make-y-axis #:min 0 #:max 30))
+  (with (make-plot (row-df [date price]
+                           1 20.50
+                           2 22
+                           3 20
+                           4 23
+                           5 26.34))
+        (make-points #:x "date" #:y "price" #:alpha 1)
+        (make-line #:x "date" #:y "date")
+        (make-y-axis #:min 0 #:max 30))
+  (with (make-plot (row-df [date price ok?]
+                           1 20.50 "yes"
+                           2 22 "no"
+                           3 20 "no"
+                           4 23 "no"
+                           4 23 "yes"
+                           5 26.34 "kinda"))
+        (make-histogram #:x "ok?")
+        (make-x-axis)
+        (make-y-axis))
+  (with (make-plot (row-df [date price ok?]
+                           1 20.50 "yes"
+                           2 22 "no"
+                           3 20 "no"
+                           4 23 "no"
+                           4 23 "yes"
+                           5 26.34 "kinda"))
+        (make-histogram #:x "ok?")
+        (make-x-axis)
+        (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
+  (with (make-plot (row-df [date price ok?]
+                           1 20.50 "yes"
+                           2 22 "no"
+                           3 20 "no"
+                           4 23 "no"
+                           4 23 "yes"
+                           5 26.34 "kinda"))
+        (make-histogram #:x "ok?")
+        (make-x-axis)
+        (make-y-axis #:min 0 #:major-tick-every #f
+                     #:minimum-ticks '(1 1.5)
+                     #:ensure-max-tick? #f
+                     #:ensure-min-tick? #f))
+  (with (make-plot (row-df [major minor money]
+                           "expenses" "food" 20
+                           "expenses" "transport" 30
+                           "expenses" "laundry" 10
+                           "expenses" "laundry" 5
+                           "income" "paycheck" 100
+                           "income" "side-job" 10))
+        (make-stacked-bars #:x "major"
+                           #:group-by "minor"
+                           #:y "money"
+                           #:labels? #f)
+        (make-x-axis)
+        (make-y-axis #:min 0))
+  (with (make-plot (row-df [major minor money]
+                           "expenses" "food" 20
+                           "expenses" "transport" 30
+                           "expenses" "laundry" 10
+                           "expenses" "laundry" 5
+                           "income" "paycheck" 100
+                           "income" "side-job" 10))
+        (make-stacked-bars #:x "major"
+                           #:group-by "minor"
+                           #:y "money")
+        (make-x-axis)
+        (make-y-axis #:min 0))
+  (with (make-plot (row-df [a] 5))
+        (make-function (λ (x) (expt 2 x))
+                       #:min 1 #:max 100)
+        (make-x-axis #:min 1 #:max 100)
+        (make-y-axis #:layout 'log))
 
-    (with (make-plot (row-df [x y y2]
-                             1 5 2
-                             2 3 2
-                             3 6 5))
-          (make-x-axis #:min 0)
-          (make-y-axis #:min 0 #:max 10)
-          (make-bars #:x "x" #:y "y2" #:label "gas")
-          (make-legend #:type 'new))
-    (with (make-plot (row-df [x y y2]
-                             1 5 2
-                             2 3 2
-                             3 6 5))
-          (make-x-axis #:min 0)
-          (make-y-axis #:min 0 #:max 10)
-          (make-line #:x "x" #:y "y2" #:label "gas")
-          (make-legend #:type 'new)))
+  (with (make-plot (row-df [x y y2]
+                           1 5 2
+                           2 3 2
+                           3 6 5))
+        (make-x-axis #:min 0)
+        (make-y-axis #:min 0 #:max 10)
+        (make-bars #:x "x" #:y "y2" #:label "gas")
+        (make-legend #:type 'new))
+  (render (with (make-plot (row-df [x y y2]
+                                   1 5 2
+                                   2 3 2
+                                   3 6 5))
+                (make-x-axis #:min 0)
+                (make-y-axis #:min 0 #:max 10)
+                (make-line #:x "x" #:y "y2" #:label "gas")
+                (make-legend #:type 'new)))
 
   (render (with (make-plot (row-df [date price categ]
                                    1 20.50 1
@@ -413,7 +433,7 @@
                              2 20 2
                              2 23 1
                              2 26.34 2))
-          (make-stacked-bars #:x "date" #:y "price" #:facet "categ")
+          (make-stacked-bars #:x "date" #:y "price" #:group-by "categ")
           (make-y-axis)
           (make-x-axis)
           (make-legend #:type 'old)))
@@ -423,7 +443,7 @@
                              2 20 2
                              2 23 1
                              2 26.34 2))
-          (make-stacked-bars #:x "date" #:y "price" #:facet "categ" #:invert? #t)
+          (make-stacked-bars #:x "date" #:y "price" #:group-by "categ" #:invert? #t)
           (make-y-axis)
           (make-x-axis)
           (make-legend #:type 'old)))

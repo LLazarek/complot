@@ -36,22 +36,30 @@
 (require syntax/parse/define
          (for-syntax racket/syntax))
 
-(define current-complot-printer (make-parameter (λ (thing port mode)
-                                                  (display @~a{#<complot @(object-name thing)>}
-                                                           port))))
+;; The printer parameter and its default, which gets overriden with one that
+;; uses `render` in `complot.rkt`
+(define current-complot-printer
+  (make-parameter (λ (thing port mode)
+                    ;; This @~a{...} syntax is like string interpolation in other languages
+                    ;; It creates a string that can embed code and values using @
+                    (display @~a{#<complot @(object-name thing)>}
+                             port))))
+
+;; The root / parent of all complot data structures, just used to attach this
+;; custom-write method...
+(struct complot-printable ()
+  #:methods gen:custom-write
+  [(define (write-proc . args)
+     ;; ... which just delegates to the current value of the printer parameter.
+     (apply (current-complot-printer) args))])
 
 (struct appearance (color
                     alpha
                     size ; size for points, thickness for lines
                     type ; symbol for points, style for lines
-                    label
-                    ))
+                    label))
 
-(struct complot-printable ()
-  #:methods gen:custom-write
-  [(define (write-proc . args)
-     (apply (current-complot-printer) args))])
-
+;; --- Plot element structs ---
 (struct axis complot-printable (label
                                 ticks?
                                 major-ticks-every
@@ -68,17 +76,20 @@
 (struct legend (position type))
 (struct title complot-printable (text))
 
+;; --- Renderer structs ---
 (struct renderer complot-printable (appearance))
 (struct point-label renderer (x y content anchor))
-(struct points renderer (x-col y-col facet-col))
+(struct points renderer (x-col y-col group-col))
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col invert?))
-(struct stacked-bars renderer (x-col facet-col y-col invert? aggregator labels?))
+(struct stacked-bars renderer (x-col group-col y-col invert? aggregator labels?))
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max))
 
+;; --- The plot struct ---
 (struct plot complot-printable (data x-axis y-axis legend title renderers))
 
+;; Some convenience macros
 (define-simple-macro (plot-set a-plot field v)
   (struct-copy plot a-plot [field v]))
 (define-simple-macro (plot-update a-plot field f v)
@@ -131,9 +142,9 @@
                                                 #:anchor [anchor 'auto])
   (point-label x y content anchor))
 (define-maker-with-appearance (make-points #:x x
-                                           #:y [y #f]
-                                           #:facet [facet #f]) ;; todo: support dot plots
-  (points x y facet))
+                                           #:y y
+                                           #:group-by [group-col #f]) ;; todo: support dot plots
+  (points x y group-col))
 (define-maker-with-appearance (make-line #:x x
                                          #:y y)
   (line x y))
@@ -142,7 +153,7 @@
                                          #:invert? [invert? #f])
   (bars x y invert?))
 (define (make-stacked-bars #:x x-col
-                           #:facet facet-col
+                           #:group-by group-col
                            #:y y-col
                            #:colors [colors 'auto]
                            #:alpha [alpha 1]
@@ -151,7 +162,7 @@
                            #:labels? [labels? #t])
   (stacked-bars (appearance colors alpha 'auto 'auto 'auto)
                 x-col
-                facet-col
+                group-col
                 y-col
                 invert?
                 aggregator

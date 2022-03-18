@@ -230,7 +230,7 @@
                               5 5 2)
                       (list (make-stacked-bars #:x "x"
                                                #:y "y"
-                                               #:facet "z"))
+                                               #:group-by "z"))
                       (list #f #f)
                       (list 0 17))
   (check-infer-bounds (row-df [x y z]
@@ -242,7 +242,7 @@
                               5 5 2)
                       (list (make-stacked-bars #:x "x"
                                                #:y "y"
-                                               #:facet "z"
+                                               #:group-by "z"
                                                #:invert? #t))
                       (list 0 17)
                       (list #f #f)))
