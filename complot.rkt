@@ -132,10 +132,10 @@
                                       a) a)
                                 outpath
                                 #:width 40)]
-    [(and (or (point-label _ x-name y-name _ _)
-              (points _ x-name y-name _)
-              (line _ x-name y-name)
-              (bars _ x-name y-name _))
+    [(and (or (struct* point-label ([x x-name] [y y-name]))
+              (struct* points ([x-col x-name] [y-col y-name]) )
+              (struct* line ([x-col x-name] [y-col y-name]) )
+              (struct* bars ([x-col x-name] [y-col y-name]) ))
           r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
@@ -154,7 +154,9 @@
                                  10 3))
                         r)
                   outpath)]
-    [(and (stacked-bars _ x-name group-name y-name _ _ _)
+    [(and (struct* stacked-bars ([x-col x-name]
+                                 [group-col group-name]
+                                 [y-col y-name]))
           r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
@@ -170,7 +172,7 @@
                                  ))
                         r)
                   outpath)]
-    [(and (histogram _ x-name _ _)
+    [(and (struct* histogram ([col x-name]))
           r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
@@ -288,8 +290,8 @@
 (define new-legend-label-scale-factor (make-parameter 1.4))
 
 (define renderer->y-axis-col
-  (match-lambda [(or (points _ _ y _)
-                     (line _ _ y)) y]
+  (match-lambda [(or (struct* points ([y-col y]))
+                     (struct* line ([y-col y]))) y]
                 [(? function?) "function"]))
 
 (define (read-data path)
@@ -459,6 +461,14 @@
                 (make-x-axis)
                 (make-y-axis)))
 
+  (render (with (make-plot (row-df [date price]
+                                   "2017" 20
+                                   "2018" 30
+                                   "2019" 100))
+                (make-x-axis #:layout 'date #:ensure-max-tick? #f)
+                (make-y-axis)
+                (make-line #:x "date" #:y "price"
+                           #:x-converter (λ (d) (->posix (parse-date d "y"))))))
 
   (make-x-axis)
   (make-y-axis))

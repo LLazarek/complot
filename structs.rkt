@@ -1,6 +1,7 @@
 #lang at-exp racket
 
 (provide (struct-out appearance)
+         (struct-out converters)
          (struct-out axis)
          (struct-out x-axis)
          (struct-out y-axis)
@@ -59,6 +60,8 @@
                     type ; symbol for points, style for lines
                     label))
 
+(struct converters (x y group))
+
 ;; --- Plot element structs ---
 (struct axis complot-printable (label
                                 ticks?
@@ -77,7 +80,7 @@
 (struct title complot-printable (text))
 
 ;; --- Renderer structs ---
-(struct renderer complot-printable (appearance))
+(struct renderer complot-printable (appearance converters))
 (struct point-label renderer (x y content anchor))
 (struct points renderer (x-col y-col group-col))
 (struct line renderer (x-col y-col))
@@ -129,28 +132,34 @@
                      #:type [type 'new])
   (legend position type))
 
-(define-simple-macro (define-maker-with-appearance (id:id formals ...)
+(define-simple-macro (define-simple-renderer (id:id formals ...)
                        (s e ...))
   (define (id formals ...
               #:color [color 'auto]
               #:alpha [alpha 1]
               #:size [size 'auto]
               #:type [type 'auto]
-              #:label [label 'auto])
-    (s (appearance color alpha size type label) e ...)))
-(define-maker-with-appearance (make-point-label x y content
-                                                #:anchor [anchor 'auto])
+              #:label [label 'auto]
+
+              #:x-converter [x-converter #f]
+              #:y-converter [y-converter #f]
+              #:group-converter [group-converter #f])
+    (s (appearance color alpha size type label)
+       (converters x-converter y-converter group-converter)
+       e ...)))
+(define-simple-renderer (make-point-label x y content
+                                          #:anchor [anchor 'auto])
   (point-label x y content anchor))
-(define-maker-with-appearance (make-points #:x x
-                                           #:y y
-                                           #:group-by [group-col #f]) ;; todo: support dot plots
+(define-simple-renderer (make-points #:x x
+                                     #:y y
+                                     #:group-by [group-col #f]) ;; todo: support dot plots
   (points x y group-col))
-(define-maker-with-appearance (make-line #:x x
-                                         #:y y)
+(define-simple-renderer (make-line #:x x
+                                   #:y y)
   (line x y))
-(define-maker-with-appearance (make-bars #:x x
-                                         #:y y
-                                         #:invert? [invert? #f])
+(define-simple-renderer (make-bars #:x x
+                                   #:y y
+                                   #:invert? [invert? #f])
   (bars x y invert?))
 (define (make-stacked-bars #:x x-col
                            #:group-by group-col
@@ -159,20 +168,25 @@
                            #:alpha [alpha 1]
                            #:invert? [invert? #f]
                            #:aggregate [aggregator +]
-                           #:labels? [labels? #t])
+                           #:labels? [labels? #t]
+
+                           #:x-converter [x-converter #f]
+                           #:y-converter [y-converter #f]
+                           #:group-converter [group-converter #f])
   (stacked-bars (appearance colors alpha 'auto 'auto 'auto)
+                (converters x-converter y-converter group-converter)
                 x-col
                 group-col
                 y-col
                 invert?
                 aggregator
                 labels?))
-(define-maker-with-appearance (make-histogram #:x x
-                                              #:bins [bins 30]
-                                              #:invert? [invert? #f])
+(define-simple-renderer (make-histogram #:x x
+                                        #:bins [bins 30]
+                                        #:invert? [invert? #f])
   (histogram x bins invert?))
-(define-maker-with-appearance (make-function f
-                                             #:min min
-                                             #:max max)
+(define-simple-renderer (make-function f
+                                       #:min min
+                                       #:max max)
   (function f min max))
 

@@ -97,12 +97,14 @@
     [(or #f 'auto) (list (plot:plot-x-transform) (plot:plot-x-ticks))]
     ['linear (list plot:id-transform (plot:linear-ticks))]
     ['log (list plot:log-transform (plot:log-ticks))]
+    ['date (list plot:id-transform (plot:date-ticks))]
     [other other]))
 
 (define inverted-renderer?
-  (match-lambda [(bars _ _ _ invert?) invert?]
-                [(stacked-bars _ _ _ _ invert? _ _) invert?]
-                [(histogram _ _ _ invert?) invert?]
+  (match-lambda [(or (struct* bars ([invert? invert?]))
+                     (struct* stacked-bars ([invert? invert?]))
+                     (struct* histogram ([invert? invert?])))
+                 invert?]
                 [else #f]))
 
 (define (infer-raw-data-bounds data renderers x-axis? #|otherwise y|#)

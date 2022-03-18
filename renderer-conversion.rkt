@@ -12,14 +12,17 @@
          math/statistics
          sawzall)
 
-(define (renderer->plot:renderer-tree data renderer
+(define (renderer->plot:renderer-tree data a-renderer
                                       #:bar-x-ticks? bar-x-ticks?
                                       #:bar-y-ticks? bar-y-ticks?
                                       #:legend? add-legend?)
-  (define raw-data (renderer->plot:data data renderer))
-  (check-plot:data-types! renderer data raw-data)
-  (match renderer
-    [(point-label (appearance color alpha size type label) x y content anchor)
+  (define raw-data (renderer->plot:data data a-renderer))
+  (check-plot:data-types! a-renderer data raw-data)
+  (match-define (renderer (appearance color alpha size type label) _)
+    a-renderer)
+  (match a-renderer
+    [(struct* point-label ([content content]
+                           [anchor anchor]))
      (plot:point-label raw-data
                        content
                        #:color (if-auto color (plot:plot-foreground))
@@ -27,7 +30,8 @@
                        #:point-size (if-auto size (plot:label-point-size))
                        #:point-sym (if-auto type 'fullcircle)
                        #:anchor anchor)]
-    [(points (appearance color alpha size type label) x-col y-col group-col)
+    [(struct* points ([y-col y-col]
+                      [group-col group-col]))
      (cond [group-col
             (define groups (split-with data group-col))
             (for/list ([group-data (in-list groups)]
@@ -37,7 +41,7 @@
                                          (list color))
                                      (in-naturals))])
               (define group-col-value (df-select group-data group-col))
-              (plot:points (renderer->plot:data group-data renderer)
+              (plot:points (renderer->plot:data group-data a-renderer)
                            #:color (if-auto group-color (plot:point-color))
                            #:alpha (if-auto alpha (plot:point-alpha))
                            #:size (if-auto size (plot:point-size))
@@ -52,14 +56,15 @@
                          #:size (if-auto size (plot:point-size))
                          #:sym (if-auto type (plot:point-sym))
                          #:label (and add-legend? (or label y-col)))])]
-    [(line (appearance color alpha size type label) x-col y-col)
+    [(struct* line ([y-col y-col]))
      (plot:lines raw-data
                  #:color (if-auto color (plot:line-color))
                  #:alpha (if-auto alpha (plot:line-alpha))
                  #:width (if-auto size (plot:line-width))
                  #:style (if-auto type (plot:line-style))
                  #:label (and add-legend? (or label y-col)))]
-    [(bars (appearance color alpha size type label) x-col y-col invert?)
+    [(struct* bars ([y-col y-col]
+                    [invert? invert?]))
      (plot:discrete-histogram raw-data
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
@@ -70,13 +75,10 @@
                                                bar-y-ticks?
                                                bar-x-ticks?)
                               #:label (and add-legend? (if-auto label y-col)))]
-    [(stacked-bars (appearance color alpha size type labels)
-                   major-col
-                   minor-col
-                   value-col
-                   invert?
-                   _
-                   labels?)
+    [(struct* stacked-bars ([x-col x-col]
+                            [group-col group-col]
+                            [invert? invert?]
+                            [labels? labels?]))
      (list (plot:stacked-histogram raw-data
                                    #:colors (if-auto color (plot:stacked-histogram-colors))
                                    #:alphas (list (if-auto alpha (plot:stacked-histogram-alphas)))
@@ -87,17 +89,18 @@
                                                     bar-y-ticks?
                                                     bar-x-ticks?)
                                    #:labels (if legend?
-                                                (if-auto labels '(#f)) ;; lltodo
+                                                (if-auto label '(#f)) ;; lltodo
                                                 '(#f))
                                    )
            (if labels?
                (make-stacked-bar-labels data
                                         raw-data
-                                        major-col
-                                        minor-col
+                                        x-col
+                                        group-col
                                         invert?)
                empty))]
-    [(histogram (appearance color alpha size type label) x-col bins invert?)
+    [(struct* histogram ([col x-col]
+                         [invert? invert?]))
      (plot:discrete-histogram raw-data
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
@@ -108,7 +111,9 @@
                                                bar-y-ticks?
                                                bar-x-ticks?)
                               #:label (and add-legend? (or label (~a x-col " count"))))]
-    [(function (appearance color alpha size type label) f min max)
+    [(struct* function ([f f]
+                        [min min]
+                        [max max]))
      (plot:function f
                     min
                     max
@@ -117,7 +122,7 @@
                     #:width (if-auto size (plot:line-width))
                     #:style (if-auto type (plot:line-style))
                     #:label (and add-legend? label))]
-    [(? add-legend?) empty]))
+    [(? legend?) empty]))
 
 (define (renderers->plot:renderer-tree data renderers
                                        #:bar-x-ticks? bar-x-ticks?
@@ -138,21 +143,35 @@
     [(vector (? real?) ...) #f]
     [else #t]))
 
-(define (renderer->plot:data data renderer)
-  (match renderer
-    [(point-label _ x y _ _)
+(define (renderer->plot:data data a-renderer)
+  (match-define (renderer _ (converters x-conv y-conv group-conv))
+    a-renderer)
+  (match a-renderer
+    [(struct* point-label ([x x] [y y]))
      (list x y)]
-    [(or (points _ (? string? x-col) (? string? y-col) _)
-         (line _ (? string? x-col) (? string? y-col))
-         (bars _ (? string? x-col) (? string? y-col) _))
+    [(or (struct* points ([x-col (? string? x-col)]
+                          [y-col (? string? y-col)]))
+         (struct* line ([x-col (? string? x-col)]
+                        [y-col (? string? y-col)]))
+         (struct* bars ([x-col (? string? x-col)]
+                        [y-col (? string? y-col)])))
+     (define x-converter (or x-conv identity))
+     (define y-converter (or y-conv identity))
      (vector->list
-      (vector-map vector->list
+      (vector-map (if (or x-conv y-conv)
+                      (match-lambda [(vector x y)
+                                     (list (x-converter x)
+                                           (y-converter y))])
+                      vector->list)
                   (df-select* data
                               x-col
                               y-col)))]
     #;[(points _ (? string? x-col) #f)
        (vector->list (df-select data x-col))]
-    [(stacked-bars _ major-col minor-col value-col invert? aggregator _)
+    [(struct* stacked-bars ([x-col x-col]
+                            [y-col y-col]
+                            [group-col group-col]
+                            [aggregator aggregator]))
      #|
      | group    | category  | money |
      |----------+-----------+-------|
@@ -161,23 +180,38 @@
      |          | laundry   |    10 |
      | income   | paycheck  |   100 |
      |          | side-job  |    10 |
-        ^          ^           ^
-       major      minor       value
+     ^          ^           ^
+     x-col      group-col    y-col
      |#
-     (define sorted-data (sort-data-by-major/minor-groups data
-                                                          major-col
-                                                          minor-col))
-     (for/list ([major-col-group-df (in-list (split-with sorted-data major-col))])
-       (define group-value (vector-ref (df-select major-col-group-df major-col) 0))
+     (define converted-data (if (or x-conv y-conv group-conv)
+                                (rename
+                                 (for/data-frame (X Y GROUP)
+                                   ([{x y group} (in-data-frame data x-col y-col group-col)])
+                                   (values (if x-conv (x-conv x) x)
+                                           (if y-conv (y-conv y) y)
+                                           (if group-conv (group-conv group) group)))
+                                 "X" x-col
+                                 "Y" y-col
+                                 "GROUP" group-col)
+                                data))
+     (define sorted-data (sort-data-by-major/minor-groups converted-data
+                                                          x-col
+                                                          group-col))
+     (for/list ([major-col-group-df (in-list (split-with sorted-data x-col))])
+       (define group-value (vector-ref (df-select major-col-group-df x-col) 0))
        (list group-value
-             (for/list ([minor-col-group-df (in-list (split-with major-col-group-df minor-col))])
-               (apply aggregator (vector->list (df-select minor-col-group-df value-col))))))]
-    [(histogram _ col bins invert?)
+             (for/list ([minor-col-group-df (in-list (split-with major-col-group-df group-col))])
+               (apply aggregator (vector->list (df-select minor-col-group-df y-col))))))]
+    [(struct* histogram ([col col]
+                         [bins bins]))
      (define the-values (vector->list (df-select data col)))
+     (define converted-values (if x-conv
+                                  (map x-conv the-values)
+                                  the-values))
      (cond [(or (categorical? data col)
-                (< (length (remove-duplicates the-values)) bins))
+                (< (length (remove-duplicates converted-values)) bins))
             (define frequencies
-              (samples->hash the-values))
+              (samples->hash converted-values))
             (define histogram-data (hash-map frequencies list))
             (if (categorical? data col)
                 histogram-data
@@ -185,41 +219,43 @@
            [else
             ;; todo: improvement, this should be able to bin based on the axis bounds?
             ;; or have a seperate argument to say the bounds of binning.
-            (define values-min (apply min the-values))
-            (define values-max (apply max the-values))
+            (define values-min (apply min converted-values))
+            (define values-max (apply max converted-values))
             (define bin-bounds (range values-min
                                       values-max
                                       (/ (- values-max values-min) bins)))
-            (for/list ([a-bin (bin-samples bin-bounds <= the-values)])
-                (list (sample-bin-min a-bin)
-                      (length (sample-bin-values a-bin))))])]
-    [(function _ f min max)
+            (for/list ([a-bin (bin-samples bin-bounds <= converted-values)])
+              (list (sample-bin-min a-bin)
+                    (length (sample-bin-values a-bin))))])]
+    [(struct* function ([f f]
+                        [min min]
+                        [max max]))
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
        (list x (f x)))]))
 
-(define (sort-data-by-major/minor-groups data major-col minor-col)
-  (define major-sorted (reorder data major-col))
-  (define grouped-by-major (group-with major-sorted major-col))
-  (define sorted-within-major (reorder grouped-by-major minor-col))
+(define (sort-data-by-major/minor-groups data x-col group-col)
+  (define major-sorted (reorder data x-col))
+  (define grouped-by-major (group-with major-sorted x-col))
+  (define sorted-within-major (reorder grouped-by-major group-col))
   (ungroup sorted-within-major))
 
 (define (data->stacked-bar-label-info data
                                       raw-data
-                                      major-col
-                                      minor-col)
+                                      x-col
+                                      group-col)
   (define sorted-data (sort-data-by-major/minor-groups data
-                                                       major-col
-                                                       minor-col))
+                                                       x-col
+                                                       group-col))
   (append*
-   (for/list ([major-col-group-df (in-list (split-with sorted-data major-col))]
+   (for/list ([major-col-group-df (in-list (split-with sorted-data x-col))]
               [major-col-group    (in-list raw-data)]
               [x-pos              (in-range 0.5 (+ 0.5 (length raw-data)))])
      (for/fold ([points empty]
                 [bar-height-so-far 0]
                 #:result points)
-               ([minor-col-group-df (in-list (split-with major-col-group-df minor-col))]
+               ([minor-col-group-df (in-list (split-with major-col-group-df group-col))]
                 [minor-col-value    (in-list (second major-col-group))])
-       (define minor-group-key (vector-ref (df-select minor-col-group-df minor-col) 0))
+       (define minor-group-key (vector-ref (df-select minor-col-group-df group-col) 0))
        (values (cons (list x-pos
                            (+ bar-height-so-far (/ minor-col-value 2))
                            minor-group-key)
@@ -228,10 +264,10 @@
 
 (define (make-stacked-bar-labels data
                                  raw-data
-                                 major-col
-                                 minor-col
+                                 x-col
+                                 group-col
                                  invert?)
-  (for/list ([info (in-list (data->stacked-bar-label-info data raw-data major-col minor-col))])
+  (for/list ([info (in-list (data->stacked-bar-label-info data raw-data x-col group-col))])
     (match-define (list x-pos y-pos label) info)
     (plot:point-label (if invert?
                           (list y-pos x-pos)

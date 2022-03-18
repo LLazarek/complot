@@ -37,8 +37,10 @@
                 y = @~s[y]
                 })]
     [{(and r
-           (or (points _ x-col y-col _)
-               (line _ x-col y-col)))
+           (or (struct* points ([x-col x-col]
+                                [y-col y-col]))
+               (struct* line ([x-col x-col]
+                              [y-col y-col]))))
       (list-no-order (and (not (list (? real?) (? real?)))
                           bad-point)
                      _ ...)}
@@ -51,7 +53,8 @@
                 There might be a problem in the data set, or you might have put a mistaken
                 column for either #:x or #:y.
                 })]
-    [{(bars _ x-col y-col _)
+    [{(struct* bars ([x-col x-col]
+                     [y-col y-col]))
       (list-no-order (list _ (and bad-y-val (not (? real?))))
                      _ ...)}
      (error 'complot
@@ -63,7 +66,9 @@
                 There might be a problem in the data set, or you might have put a mistaken column
                 for #:y.
                 })]
-    [{(stacked-bars _ x-col group-col y-col _ _ _)
+    [{(struct* stacked-bars ([x-col x-col]
+                             [group-col group-col]
+                             [y-col y-col]))
       (list-no-order (list x-value (and (not (list (? real?) ...)) bad-group-vals))
                      _ ...)}
      (error 'complot
@@ -94,9 +99,9 @@
                 It looks like you are trying to use a complot thing, but you
                 gave the creator of the thing instead of the thing.
                 For example, you may have written something like,
-                  (add-to ... x-axis)
+                (add-to ... x-axis)
                 when you should instead write,
-                  (add-to ... (x-axis))
+                (add-to ... (x-axis))
                 })]
     [{_ something-else}
      (error 'complot
