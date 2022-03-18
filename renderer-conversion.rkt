@@ -88,15 +88,16 @@
                                    #:add-ticks? (if invert?
                                                     bar-y-ticks?
                                                     bar-x-ticks?)
-                                   #:labels (if legend?
-                                                (if-auto label '(#f)) ;; lltodo
+                                   #:labels (if add-legend?
+                                                (if-auto label
+                                                         (map ~a (group-ordering data group-col)))
                                                 '(#f))
                                    )
            (if labels?
-               (make-stacked-bar-labels data
-                                        raw-data
-                                        x-col
-                                        group-col
+               (make-stacked-bar-labels (data->stacked-bar-label-info data
+                                                                      raw-data
+                                                                      x-col
+                                                                      group-col)
                                         invert?)
                empty))]
     [(struct* histogram ([col x-col]
@@ -194,14 +195,21 @@
                                  "Y" y-col
                                  "GROUP" group-col)
                                 data))
-     (define sorted-data (sort-data-by-major/minor-groups converted-data
-                                                          x-col
-                                                          group-col))
-     (for/list ([major-col-group-df (in-list (split-with sorted-data x-col))])
-       (define group-value (vector-ref (df-select major-col-group-df x-col) 0))
-       (list group-value
-             (for/list ([minor-col-group-df (in-list (split-with major-col-group-df group-col))])
-               (apply aggregator (vector->list (df-select minor-col-group-df y-col))))))]
+     (define sorted-data
+       (sort-data-by-x-col-then-groups converted-data
+                                       x-col
+                                       group-col))
+     (define group-sequence (group-ordering sorted-data group-col))
+     (for/list ([x-col-group-df (in-list (split-with sorted-data x-col))])
+       (define x-value (any-value-in x-col-group-df x-col))
+       (define group-col-dfs (split-with x-col-group-df group-col))
+       (list x-value
+             (for/list ([group (in-list group-sequence)])
+               (define group-df (findf (λ (df) (equal? group (any-value-in df group-col)))
+                                       group-col-dfs))
+               (if group-df
+                   (apply aggregator (vector->list (df-select group-df y-col)))
+                   0))))]
     [(struct* histogram ([col col]
                          [bins bins]))
      (define the-values (vector->list (df-select data col)))
@@ -233,41 +241,54 @@
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
        (list x (f x)))]))
 
-(define (sort-data-by-major/minor-groups data x-col group-col)
-  (define major-sorted (reorder data x-col))
-  (define grouped-by-major (group-with major-sorted x-col))
-  (define sorted-within-major (reorder grouped-by-major group-col))
-  (ungroup sorted-within-major))
+(define (any-value-in data col)
+  (vector-ref (df-select data col) 0))
+
+(define (sort-data-by-x-col-then-groups data x-col group-col)
+  (define sorted-by-x (reorder data x-col))
+  (define grouped-by-x (group-with sorted-by-x x-col))
+  (define sorted-within-x (reorder grouped-by-x group-col))
+  (ungroup sorted-within-x)
+
+  ;; (define cols (df-series-names sorted-data))
+  ;; (define group-sequences
+  ;;   (df-select
+  ;;    (aggregate (group-with (rename sorted-data
+  ;;                                  group-col
+  ;;                                  "GROUP")
+  ;;                          x-col)
+  ;;               [GROUP (GROUP) (vector->list GROUP)])
+  ;;    "GROUP"))
+  ;; (define group-sequence (remove-duplicates (append* (vector->list group-sequences))))
+)
+
+(define (group-ordering data group-col)
+  (sort (remove-duplicates (vector->list (df-select data group-col)))
+        orderable<?))
 
 (define (data->stacked-bar-label-info data
                                       raw-data
                                       x-col
                                       group-col)
-  (define sorted-data (sort-data-by-major/minor-groups data
-                                                       x-col
-                                                       group-col))
+  (define group-sequence (group-ordering data group-col))
   (append*
-   (for/list ([major-col-group-df (in-list (split-with sorted-data x-col))]
-              [major-col-group    (in-list raw-data)]
-              [x-pos              (in-range 0.5 (+ 0.5 (length raw-data)))])
+   (for/list ([x-col-group    (in-list raw-data)]
+              [x-pos          (in-range 0.5 (+ 0.5 (length raw-data)))])
      (for/fold ([points empty]
                 [bar-height-so-far 0]
                 #:result points)
-               ([minor-col-group-df (in-list (split-with major-col-group-df group-col))]
-                [minor-col-value    (in-list (second major-col-group))])
-       (define minor-group-key (vector-ref (df-select minor-col-group-df group-col) 0))
+               ([group-value (in-list group-sequence)]
+                [y-value     (in-list (second x-col-group))]
+                #:when (> y-value 0))
        (values (cons (list x-pos
-                           (+ bar-height-so-far (/ minor-col-value 2))
-                           minor-group-key)
+                           (+ bar-height-so-far (/ y-value 2))
+                           group-value)
                      points)
-               (+ bar-height-so-far minor-col-value))))))
+               (+ bar-height-so-far y-value))))))
 
-(define (make-stacked-bar-labels data
-                                 raw-data
-                                 x-col
-                                 group-col
+(define (make-stacked-bar-labels label-info ;; as returned by `data->stacked-bar-label-info`
                                  invert?)
-  (for/list ([info (in-list (data->stacked-bar-label-info data raw-data x-col group-col))])
+  (for/list ([info (in-list label-info)])
     (match-define (list x-pos y-pos label) info)
     (plot:point-label (if invert?
                           (list y-pos x-pos)
@@ -278,6 +299,28 @@
 
 (module+ test
   (require rackunit)
+  (let ([sorted (sort-data-by-x-col-then-groups
+                 (row-df [major minor money]
+                         "expenses" "food" 20
+                         "expenses" "transport" 30
+                         "expenses" "laundry" 10
+                         "expenses" "laundry" 5
+                         "income" "paycheck" 100
+                         "income" "side-job" 10)
+                 "major"
+                 "minor")])
+    (check-equal? (sequence->list (in-data-frame/as-list sorted
+                                                         "major"
+                                                         "minor"
+                                                         "money"))
+                  '(("expenses" "food" 20)
+                    ("expenses" "laundry" 10)
+                    ("expenses" "laundry" 5)
+                    ("expenses" "transport" 30)
+                    ("income" "paycheck" 100)
+                    ("income" "side-job" 10)))
+    (check-equal? (group-ordering sorted "minor")
+                  '("food" "laundry" "paycheck" "side-job" "transport")))
   (check-equal? (renderer->plot:data (row-df [major minor money]
                                              "expenses" "food" 20
                                              "expenses" "transport" 30
@@ -288,9 +331,9 @@
                                      (make-stacked-bars #:x "major"
                                                         #:group-by "minor"
                                                         #:y "money"))
-                ;; 15 before 30 because of alphabetic sorting by `minor`
-                '(("expenses" (20 15 30))
-                  ("income" (100 10))))
+                ;; order due to alphabetic sorting by `minor`, 0s fill missing values of `minor`
+                '(("expenses" (20 15 0 0 30))
+                  ("income" (0 0 100 10 0))))
   (check-equal? (let ([data (row-df [major minor money]
                                     "expenses" "food" 20
                                     "expenses" "transport" 30

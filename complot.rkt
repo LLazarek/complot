@@ -115,9 +115,13 @@
                                 out)))
         plot-pict+legend)))
 
-(define (render thing [outpath #f])
+(define (render thing [outpath #f]
+                #:width [width (plot:plot-width)]
+                #:height [height (plot:plot-height)])
   (match thing
-    [(? plot? p) (render-plot p outpath)]
+    [(? plot? p) (render-plot p outpath
+                              #:width width
+                              #:height height)]
     [(? x-axis? a) (render-plot (with (make-plot (row-df [x y]
                                                          0 0
                                                          1 0))
@@ -461,6 +465,7 @@
                 (make-x-axis)
                 (make-y-axis)))
 
+  (require gregor)
   (render (with (make-plot (row-df [date price]
                                    "2017" 20
                                    "2018" 30
@@ -469,6 +474,47 @@
                 (make-y-axis)
                 (make-line #:x "date" #:y "price"
                            #:x-converter (λ (d) (->posix (parse-date d "y"))))))
+
+  (render (with (make-plot (row-df [date y group]
+                                   "2021-01-05" 5 1
+                                   "2021-01-05" 10 2
+                                   "2021-01-05" 15 2
+                                   "2021-01-06" 5 1
+                                   "2021-01-06" 10 2
+                                   "2021-01-07" 20 2))
+                (make-stacked-bars #:x "date" #:y "y" #:group-by "group")))
+
+   ;; todo: bug, no legend! and bug, date x-axis layout isn't even working
+  (render (with (make-plot (row-df [date price group]
+                                   "2017" 20 "A"
+                                   "2017" 10 "B"
+                                   "2018" 30 "A"
+                                   "2018" 5 "B"
+                                   "2019" 100 "A"
+                                   "2019" 5 "B"))
+                (make-x-axis #:layout 'date #:ensure-max-tick? #f)
+                (make-y-axis)
+                (make-stacked-bars #:x "date" #:y "price" #:group-by "group"
+                                   #:labels? #f
+                           #:x-converter (λ (d) (->posix (parse-date d "y"))))
+                (make-legend)))
+
+  ;; todo: bug, crazy overlapping labels; need to treat the x-axis for these
+  ;; bars as a continuous thing somehow.
+  ;; Perhaps do it with an option for axes #:categorical?, with heuristics to guess on 'auto
+  ;; which is basically what I'm doing already.
+  (render (with (make-plot (for/data-frame (date price group)
+                             ([offset (in-range 100)]
+                              #:when #t
+                              [group (list "gas" "electric")])
+                             (values (->posix (+days (parse-date "2019" "y") offset))
+                                     (random 100)
+                                     group)))
+                (make-x-axis #:layout 'date #:ensure-max-tick? #f)
+                (make-y-axis)
+                (make-stacked-bars #:x "date" #:y "price" #:group-by "group"
+                                   #:labels? #f)
+                (make-legend)))
 
   (make-x-axis)
   (make-y-axis))
