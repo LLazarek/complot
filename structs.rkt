@@ -13,6 +13,7 @@
          (struct-out line)
          (struct-out bars)
          (struct-out stacked-bars)
+         (struct-out stacked-area)
          (struct-out histogram)
          (struct-out function)
          (struct-out plot)
@@ -29,6 +30,7 @@
          make-line
          make-bars
          make-stacked-bars
+         make-stacked-area
          make-histogram
          make-function
 
@@ -86,6 +88,7 @@
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col invert?))
 (struct stacked-bars renderer (x-col group-col y-col invert? aggregator labels?))
+(struct stacked-area renderer (x-col group-col y-col labels?))
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max))
 
@@ -180,6 +183,22 @@
                 y-col
                 invert?
                 aggregator
+                labels?))
+(define (make-stacked-area #:x x-col
+                           #:group-by group-col
+                           #:y y-col
+                           #:colors [colors 'auto]
+                           #:alpha [alpha 1]
+                           #:labels? [labels? #t]
+
+                           #:x-converter [x-converter #f]
+                           #:y-converter [y-converter #f]
+                           #:group-converter [group-converter #f])
+  (stacked-area (appearance colors alpha 'auto 'auto 'auto)
+                (converters x-converter y-converter group-converter)
+                x-col
+                group-col
+                y-col
                 labels?))
 (define-simple-renderer (make-histogram #:x x
                                         #:bins [bins 30]

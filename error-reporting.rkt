@@ -27,6 +27,9 @@
           (? function?))
       _}
      (void)]
+    [{(? stacked-area?)
+      (list (list (list (? real?) (? real?)) ...) ...)}
+     (void)]
     ;; Others: error
     [{(? point-label?) (list x y)}
      (error 'complot

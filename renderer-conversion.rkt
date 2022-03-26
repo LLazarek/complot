@@ -2,7 +2,8 @@
 
 (provide renderers->plot:renderer-tree
          renderer->plot:renderer-tree
-         renderer->plot:data)
+         renderer->plot:data
+         bar-plot?)
 
 (require "structs.rkt"
          "util.rkt"
@@ -20,6 +21,14 @@
   (check-plot:data-types! a-renderer data raw-data)
   (match-define (renderer (appearance color alpha size type label) _)
     a-renderer)
+  (define (color-sequence)
+    (if (equal? color 'auto)
+        (in-naturals)
+        (in-sequences
+         (if (list? color)
+             color
+             (list color))
+         (in-naturals))))
   (match a-renderer
     [(struct* point-label ([content content]
                            [anchor anchor]))
@@ -33,13 +42,14 @@
     [(struct* points ([y-col y-col]
                       [group-col group-col]))
      (cond [group-col
-            (define groups (split-with data group-col))
-            (for/list ([group-data (in-list groups)]
-                       [group-color (in-sequences
-                                     (if (list? color)
-                                         color
-                                         (list color))
-                                     (in-naturals))])
+            (define groups (group-ordering data group-col))
+            (define group-datas (split-with data group-col))
+            (for/list ([group (in-list groups)]
+                       [group-color (color-sequence)]
+                       #:when #t
+                       [group-data (in-value (find-group-df group-datas group-col group))]
+                       #:when (and group-data
+                                   (> (df-row-count group-data) 0)))
               (define group-col-value (df-select group-data group-col))
               (plot:points (renderer->plot:data group-data a-renderer)
                            #:color (if-auto group-color (plot:point-color))
@@ -100,6 +110,30 @@
                                                                       group-col)
                                         invert?)
                empty))]
+    [(struct* stacked-area ([x-col x-col]
+                            [group-col group-col]
+                            [labels? labels?]))
+     (define ->0 (match-lambda [(list x y) (list x 0)]))
+     (define groups (group-ordering data group-col))
+     (for/fold ([plot:renderers empty]
+                [last-group-points #f]
+                #:result plot:renderers)
+               ([group (in-list groups)]
+                [group-points (in-list raw-data)]
+                [color (color-sequence)]
+                [group-label (in-list (if-auto label groups))])
+       (define this-renderer
+         (plot:lines-interval (or last-group-points
+                                  (list (->0 (argmin first group-points))
+                                        (->0 (argmax first group-points))))
+                              group-points
+                              #:color color
+                              #:line1-color color
+                              #:line2-width 0
+                              #:alpha (if-auto alpha (plot:interval-alpha))
+                              #:label (and add-legend? group-label)))
+       (values (cons this-renderer plot:renderers)
+               group-points))]
     [(struct* histogram ([col x-col]
                          [invert? invert?]))
      (plot:discrete-histogram raw-data
@@ -205,11 +239,16 @@
        (define group-col-dfs (split-with x-col-group-df group-col))
        (list x-value
              (for/list ([group (in-list group-sequence)])
-               (define group-df (findf (λ (df) (equal? group (any-value-in df group-col)))
-                                       group-col-dfs))
+               (define group-df (find-group-df group-col-dfs
+                                               group-col
+                                               group))
                (if group-df
                    (apply aggregator (vector->list (df-select group-df y-col)))
                    0))))]
+    [(struct* stacked-area ([x-col x-col]
+                            [y-col y-col]
+                            [group-col group-col]))
+     (data->grouped-points data x-col y-col group-col)]
     [(struct* histogram ([col col]
                          [bins bins]))
      (define the-values (vector->list (df-select data col)))
@@ -240,6 +279,29 @@
                         [max max]))
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
        (list x (f x)))]))
+
+;; lltodo: group-conv needs to be taken into consideration for `group-ordering` (that will affect the labels too in the renderer tree conversion above)
+;; perhaps just have a function that converts the data for a renderer and call it at the top just like the raw-data definition.
+
+;; data-frame? string? string? string?
+;; ->
+;; (listof points-list?)
+;; where points-list? := (listof (list/c real? real?))
+(define (data->grouped-points data ;; assume that any converters have been applied already
+                              x-col
+                              y-col
+                              group-col)
+  (define groups (group-ordering data group-col))
+  (define group-datas (split-with data group-col))
+  (for*/list ([group (in-list groups)]
+              [group-data (in-value (find-group-df group-datas group-col group))])
+    (renderer->plot:data group-data
+                         (make-points #:x x-col
+                                      #:y y-col))))
+
+(define (find-group-df df-partitions-by-group-col group-col group)
+  (findf (λ (df) (equal? group (any-value-in df group-col)))
+         df-partitions-by-group-col))
 
 (define (any-value-in data col)
   (vector-ref (df-select data col) 0))
@@ -296,6 +358,10 @@
                       (~a label)
                       #:anchor 'center
                       #:point-size 0)))
+
+(define (bar-plot? renderers)
+  (and (not (empty? renderers))
+       (andmap (disjoin bars? stacked-bars? histogram?) renderers)))
 
 (module+ test
   (require rackunit)

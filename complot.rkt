@@ -61,29 +61,29 @@
                      #:width [width (plot:plot-width)]
                      #:height [height (plot:plot-height)])
   (match-define (plot data x-axis y-axis maybe-legend title renderers) a-plot)
-  (match-define (list x-min x-max x-axis-plot:renderers)
+  (match-define (list x-min x-max x-ticks x-axis-plot:renderers add-bar-x-ticks?)
     (if x-axis
         (x-axis->plot:axis x-axis data renderers)
-        (list #f #f empty)))
-  (match-define (list y-min y-max y-axis-plot:renderers)
+        (list #f #f #f empty #f)))
+  (match-define (list y-min y-max y-ticks y-axis-plot:renderers add-bar-y-ticks?)
     (if y-axis
         (y-axis->plot:axis y-axis data renderers)
-        (list #f #f empty)))
+        (list #f #f #f empty #f)))
   (define new-style-legend? (should-add-new-style-legend? maybe-legend renderers))
   (define plot:renderers
     (renderers->plot:renderer-tree data
                                    renderers
-                                   #:bar-x-ticks? (not (empty? x-axis-plot:renderers))
-                                   #:bar-y-ticks? (not (empty? y-axis-plot:renderers))
+                                   #:bar-x-ticks? add-bar-x-ticks?
+                                   #:bar-y-ticks? add-bar-y-ticks?
                                    #:legend? (and maybe-legend
                                                   (not new-style-legend?))))
   (parameterize ([plot:plot-title           title]
                  [plot:plot-x-label         (axis->label x-axis)]
                  [plot:plot-y-label         (axis->label y-axis)]
-                 [plot:plot-x-ticks         plot:no-ticks]
-                 [plot:plot-y-ticks         plot:no-ticks]
-                 [plot:plot-x-transform     (first (axis->ticks+transform x-axis))]
-                 [plot:plot-y-transform     (first (axis->ticks+transform y-axis))]
+                 [plot:plot-x-ticks         (or x-ticks plot:no-ticks)]
+                 [plot:plot-y-ticks         (or y-ticks plot:no-ticks)]
+                 [plot:plot-x-transform     (first (axis->transform+ticks x-axis))]
+                 [plot:plot-y-transform     (first (axis->transform+ticks y-axis))]
                  [plot:plot-pen-color-map   'tab10]
                  [plot:plot-brush-color-map 'tab10])
     (define the-plot-pict
@@ -158,9 +158,12 @@
                                  10 3))
                         r)
                   outpath)]
-    [(and (struct* stacked-bars ([x-col x-name]
-                                 [group-col group-name]
-                                 [y-col y-name]))
+    [(and (or (struct* stacked-bars ([x-col x-name]
+                                     [group-col group-name]
+                                     [y-col y-name]))
+              (struct* stacked-area ([x-col x-name]
+                                     [group-col group-name]
+                                     [y-col y-name])))
           r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
@@ -344,7 +347,8 @@
         (make-histogram #:x "ok?")
         (make-x-axis)
         (make-y-axis))
-  (with (make-plot (row-df [date price ok?]
+  ;; todo: waiting on support for these tick manipulating options
+  #;(with (make-plot (row-df [date price ok?]
                            1 20.50 "yes"
                            2 22 "no"
                            3 20 "no"
@@ -483,38 +487,6 @@
                                    "2021-01-06" 10 2
                                    "2021-01-07" 20 2))
                 (make-stacked-bars #:x "date" #:y "y" #:group-by "group")))
-
-   ;; todo: bug, no legend! and bug, date x-axis layout isn't even working
-  (render (with (make-plot (row-df [date price group]
-                                   "2017" 20 "A"
-                                   "2017" 10 "B"
-                                   "2018" 30 "A"
-                                   "2018" 5 "B"
-                                   "2019" 100 "A"
-                                   "2019" 5 "B"))
-                (make-x-axis #:layout 'date #:ensure-max-tick? #f)
-                (make-y-axis)
-                (make-stacked-bars #:x "date" #:y "price" #:group-by "group"
-                                   #:labels? #f
-                           #:x-converter (λ (d) (->posix (parse-date d "y"))))
-                (make-legend)))
-
-  ;; todo: bug, crazy overlapping labels; need to treat the x-axis for these
-  ;; bars as a continuous thing somehow.
-  ;; Perhaps do it with an option for axes #:categorical?, with heuristics to guess on 'auto
-  ;; which is basically what I'm doing already.
-  (render (with (make-plot (for/data-frame (date price group)
-                             ([offset (in-range 100)]
-                              #:when #t
-                              [group (list "gas" "electric")])
-                             (values (->posix (+days (parse-date "2019" "y") offset))
-                                     (random 100)
-                                     group)))
-                (make-x-axis #:layout 'date #:ensure-max-tick? #f)
-                (make-y-axis)
-                (make-stacked-bars #:x "date" #:y "price" #:group-by "group"
-                                   #:labels? #f)
-                (make-legend)))
 
   (make-x-axis)
   (make-y-axis))

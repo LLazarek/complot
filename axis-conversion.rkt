@@ -3,7 +3,7 @@
 (provide x-axis->plot:axis
          y-axis->plot:axis
          axis->label
-         axis->ticks+transform)
+         axis->transform+ticks)
 
 (require "structs.rkt"
          "renderer-conversion.rkt"
@@ -46,9 +46,15 @@
                 (list the-max)
                 empty)
             (axis-minimum-ticks an-axis)))
-  (define plot:ticks-fn (second (axis->ticks+transform an-axis)))
+  (define plot:ticks-thing (second (axis->transform+ticks an-axis)))
   (define plot-ticks
-    (if (and (axis-ticks? an-axis)
+    (cond [(not (axis-ticks? an-axis))
+           plot:no-ticks]
+          [(not (empty? extra-ticks))
+           (plot:ticks-add plot:ticks-thing
+                           extra-ticks)]
+          [else plot:ticks-thing])
+    #;(if (and (axis-ticks? an-axis)
              (not this-axis-is-categorical?))
         (plot:ticks-generate
          (plot:ticks-add
@@ -83,22 +89,51 @@
         ;; leave it up to plot's internal handling in render, or
         ;; we don't need the ticks at all
         empty))
+  (define add-bar-ticks?
+    (and (axis-ticks? an-axis)
+         (bar-plot? renderers)
+         (not (equal? (plot:ticks-layout plot:ticks-thing)
+                      plot:no-ticks-layout))))
   (list the-min
         the-max
-        (list (make-plot:axis plot-ticks)
+        plot-ticks
+        (if (axis-tick-lines? an-axis)
+            (if (x-axis? an-axis)
+                (plot:x-tick-lines)
+                (plot:y-tick-lines))
+            empty)
+        add-bar-ticks?
+        #;(list (make-plot:axis plot-ticks)
               (if (axis-tick-lines? an-axis)
                   (if (x-axis? an-axis)
                       (plot:x-tick-lines)
                       (plot:y-tick-lines))
                   empty))))
 
-(define (axis->ticks+transform axis)
-  (match (and axis (axis-layout axis))
-    [(or #f 'auto) (list (plot:plot-x-transform) (plot:plot-x-ticks))]
-    ['linear (list plot:id-transform (plot:linear-ticks))]
-    ['log (list plot:log-transform (plot:log-ticks))]
-    ['date (list plot:id-transform (plot:date-ticks))]
-    [other other]))
+(define (axis->transform+ticks axis)
+  (define plot:transform
+    (match (and axis (axis-layout axis))
+      [(or #f 'auto) (plot:plot-x-transform)]
+      ['log plot:log-transform]
+      [other plot:id-transform]))
+  (define plot:layout
+    (match* {(and axis (axis-layout axis)) (and axis (axis-major-ticks-every axis))}
+      [{(or #f 'auto 'linear) 'auto} (plot:linear-ticks-layout)]
+      [{'log 'auto} (plot:log-ticks-layout)]
+      [{'date 'auto} (plot:date-ticks-layout)]
+      [{_ (or 0 #f)} plot:no-ticks-layout]
+      [{_ (? number?)}
+       (raise-user-error
+        'x-/y-axis
+        "#:major-tick-every only supports 0, #f, or 'auto for now.")]))
+  (define plot:format
+    (match (and axis (axis-layout axis))
+      [(or #f 'auto 'linear) (plot:linear-ticks-format)]
+      ['log (plot:log-ticks-format)]
+      ['date (plot:date-ticks-format)]
+      [other other]))
+  (list plot:transform
+        (plot:ticks plot:layout plot:format)))
 
 (define inverted-renderer?
   (match-lambda [(or (struct* bars ([invert? invert?]))
@@ -130,7 +165,13 @@
          (real-min/maxes y-totals)]
         [(list (list _ (? (negate real?) ys)) ...)
          #:when (not x-axis?)
-         (list 0 (length ys))])))
+         (list 0 (length ys))]
+        [(list (list (list (? real? xs-lists) _) ...) ...)
+         #:when x-axis?
+         (real-min/maxes (flatten xs-lists))]
+        [(list (list (list _ (? real? ys-lists)) ...) ...)
+         #:when (not x-axis?)
+         (real-min/maxes (flatten ys-lists))])))
   (if (empty? mins+maxes)
       (values #f #f)
       (values (apply min (map first mins+maxes))
@@ -138,11 +179,9 @@
 
 (define (infer-bounds data renderers x-axis? user-min user-max)
   (define y-axis? (not x-axis?))
-  (define bar-plot?
-    (and (not (empty? renderers))
-         (andmap (disjoin bars? stacked-bars? histogram?) renderers)))
+  (define this-is-a-bar-plot? (bar-plot? renderers))
   (define inverted-bar-plot?
-    (and bar-plot?
+    (and this-is-a-bar-plot?
          (andmap inverted-renderer? renderers)))
   (define-values {inferred-min inferred-max}
     (infer-raw-data-bounds data
@@ -151,12 +190,12 @@
                                y-axis?
                                x-axis?)))
   (define this-axis-is-categories-of-bar-plot?
-    (and bar-plot?
+    (and this-is-a-bar-plot?
          (if inverted-bar-plot?
              y-axis?
              x-axis?)))
   (define this-axis-is-values-of-bar-plot?
-    (and bar-plot?
+    (and this-is-a-bar-plot?
          (if inverted-bar-plot?
              x-axis?
              y-axis?)))
