@@ -9,6 +9,7 @@
                      [make-line          line]
                      [make-bars          bars]
                      [make-stacked-bars  stacked-bars]
+                     [make-stacked-area  stacked-area]
                      [make-histogram     histogram]
                      [make-function      function]
 
@@ -56,6 +57,8 @@
      (apply with (with-one a-plot a-thing) more)]
     ['() a-plot]))
 
+(define current-complot-color-map (make-parameter 'tab10))
+
 (define (render-plot a-plot
                      [outpath #f]
                      #:width [width (plot:plot-width)]
@@ -84,8 +87,8 @@
                  [plot:plot-y-ticks         (or y-ticks plot:no-ticks)]
                  [plot:plot-x-transform     (first (axis->transform+ticks x-axis))]
                  [plot:plot-y-transform     (first (axis->transform+ticks y-axis))]
-                 [plot:plot-pen-color-map   'tab10]
-                 [plot:plot-brush-color-map 'tab10])
+                 [plot:plot-pen-color-map   (current-complot-color-map)]
+                 [plot:plot-brush-color-map (current-complot-color-map)])
     (define the-plot-pict
       (plot:plot-pict (append (list x-axis-plot:renderers
                                     y-axis-plot:renderers)
@@ -250,36 +253,46 @@
 (define (should-add-new-style-legend? maybe-legend renderers)
   (match* {maybe-legend renderers}
     [{(legend 'auto 'new)
-      (list (or (? line?) (? points?) (? function?)) ...)}
+      (list (or (? line?) (? points?) (? function?) (? stacked-area?)) ...)}
      #t]
     [{_ _} #f]))
 
 (define (add-new-style-legend plot-pict a-plot)
+  (define (string->label-pict label)
+    (pict:text label
+               (plot:plot-font-family)
+               (round (* (plot:plot-font-size)
+                         (new-legend-label-scale-factor)))))
+  (define (fix-overlaps coords+labels)
+    (define-values {overlapping-labels others}
+      (isolate-overlaps coords+labels))
+    (append others
+            ;; lltodo wiw: fixing overlapping labels
+            (for/fol)))
+
   (define data (plot-data a-plot))
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
   (define coords+labels
-    (for/list ([renderer (in-list (plot-renderers a-plot))])
-      (define renderer-raw-data (renderer->plot:data data renderer))
-      (define sorted-data (sort renderer-raw-data < #:key first))
-      (define rightmost-point (last sorted-data))
+    (for*/list ([renderer (in-list (plot-renderers a-plot))]
+                [a-p+l (in-list (renderer->rightmost-points+labels data renderer))])
+      (match-define (p+l rightmost-point label) a-p+l)
       (define dc-coords-of-rightmost-point
         (convert-coords (list->vector rightmost-point)))
-      (define the-appearance (renderer-appearance renderer))
       (list (vector-ref dc-coords-of-rightmost-point 0)
             (vector-ref dc-coords-of-rightmost-point 1)
-            (if-auto (appearance-label the-appearance)
-                     (renderer->y-axis-col renderer))
-            (if-auto (appearance-color the-appearance)
+            label
+            (if-auto (appearance-color (renderer-appearance renderer))
                      "black"))))
+  (define coords+labels/non-overlapping
+    (fix-overlaps coords+labels))
   (pict:panorama
    (for/fold ([plot-pict plot-pict])
-             ([coords+label (in-list coords+labels)])
+             ([coords+label (in-list coords+labels/non-overlapping)])
      (match-define (list x y label color) coords+label)
      (define label-pict
-       (pict:text label
-                  (plot:plot-font-family)
-                  (round (* (plot:plot-font-size)
-                            (new-legend-label-scale-factor)))))
+       (if (string? label)
+           (string->label-pict label)
+           label))
      (define label-pict+color
        (if (colorize-new-legend-labels?)
            (pict:colorize label-pict
@@ -295,11 +308,6 @@
 (define colorize-new-legend-labels? (make-parameter #f))
 
 (define new-legend-label-scale-factor (make-parameter 1.4))
-
-(define renderer->y-axis-col
-  (match-lambda [(or (struct* points ([y-col y]))
-                     (struct* line ([y-col y]))) y]
-                [(? function?) "function"]))
 
 (define (read-data path)
   (df-read/csv path))

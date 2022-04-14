@@ -3,7 +3,9 @@
 (provide renderers->plot:renderer-tree
          renderer->plot:renderer-tree
          renderer->plot:data
-         bar-plot?)
+         bar-plot?
+         (struct-out p+l)
+         renderer->rightmost-points+labels)
 
 (require "structs.rkt"
          "util.rkt"
@@ -13,11 +15,12 @@
          math/statistics
          sawzall)
 
-(define (renderer->plot:renderer-tree data a-renderer
+(define (renderer->plot:renderer-tree unconverted-data a-renderer
                                       #:bar-x-ticks? bar-x-ticks?
                                       #:bar-y-ticks? bar-y-ticks?
                                       #:legend? add-legend?)
-  (define raw-data (renderer->plot:data data a-renderer))
+  (define data (converter-transform unconverted-data a-renderer))
+  (define raw-data (renderer->plot:data unconverted-data a-renderer data))
   (check-plot:data-types! a-renderer data raw-data)
   (match-define (renderer (appearance color alpha size type label) _)
     a-renderer)
@@ -131,7 +134,7 @@
                               #:line1-color color
                               #:line2-width 0
                               #:alpha (if-auto alpha (plot:interval-alpha))
-                              #:label (and add-legend? group-label)))
+                              #:label (and add-legend? (~a group-label))))
        (values (cons this-renderer plot:renderers)
                group-points))]
     [(struct* histogram ([col x-col]
@@ -178,9 +181,10 @@
     [(vector (? real?) ...) #f]
     [else #t]))
 
-(define (renderer->plot:data data a-renderer)
-  (match-define (renderer _ (converters x-conv y-conv group-conv))
-    a-renderer)
+(define (renderer->plot:data unconverted-data
+                             a-renderer
+                             [converted-data (converter-transform unconverted-data a-renderer)])
+  (define data converted-data)
   (match a-renderer
     [(struct* point-label ([x x] [y y]))
      (list x y)]
@@ -190,17 +194,10 @@
                         [y-col (? string? y-col)]))
          (struct* bars ([x-col (? string? x-col)]
                         [y-col (? string? y-col)])))
-     (define x-converter (or x-conv identity))
-     (define y-converter (or y-conv identity))
-     (vector->list
-      (vector-map (if (or x-conv y-conv)
-                      (match-lambda [(vector x y)
-                                     (list (x-converter x)
-                                           (y-converter y))])
-                      vector->list)
-                  (df-select* data
-                              x-col
-                              y-col)))]
+     (for/list ([x-y-vec (in-vector (df-select* data
+                                                x-col
+                                                y-col))])
+       (vector->list x-y-vec))]
     #;[(points _ (? string? x-col) #f)
        (vector->list (df-select data x-col))]
     [(struct* stacked-bars ([x-col x-col]
@@ -218,19 +215,8 @@
      ^          ^           ^
      x-col      group-col    y-col
      |#
-     (define converted-data (if (or x-conv y-conv group-conv)
-                                (rename
-                                 (for/data-frame (X Y GROUP)
-                                   ([{x y group} (in-data-frame data x-col y-col group-col)])
-                                   (values (if x-conv (x-conv x) x)
-                                           (if y-conv (y-conv y) y)
-                                           (if group-conv (group-conv group) group)))
-                                 "X" x-col
-                                 "Y" y-col
-                                 "GROUP" group-col)
-                                data))
      (define sorted-data
-       (sort-data-by-x-col-then-groups converted-data
+       (sort-data-by-x-col-then-groups data
                                        x-col
                                        group-col))
      (define group-sequence (group-ordering sorted-data group-col))
@@ -247,18 +233,22 @@
                    0))))]
     [(struct* stacked-area ([x-col x-col]
                             [y-col y-col]
-                            [group-col group-col]))
-     (data->grouped-points data x-col y-col group-col)]
+                            [group-col group-col]
+                            [aggregator aggregator]))
+     (define group-sequence (group-ordering data group-col))
+     (define grouped-points
+       (data->grouped-points data x-col y-col group-col group-sequence aggregator))
+     (check-aligned! grouped-points
+                     a-renderer
+                     group-sequence)
+     (grouped-points->stacked-points grouped-points)]
     [(struct* histogram ([col col]
                          [bins bins]))
      (define the-values (vector->list (df-select data col)))
-     (define converted-values (if x-conv
-                                  (map x-conv the-values)
-                                  the-values))
      (cond [(or (categorical? data col)
-                (< (length (remove-duplicates converted-values)) bins))
+                (< (length (remove-duplicates the-values)) bins))
             (define frequencies
-              (samples->hash converted-values))
+              (samples->hash the-values))
             (define histogram-data (hash-map frequencies list))
             (if (categorical? data col)
                 histogram-data
@@ -266,12 +256,12 @@
            [else
             ;; todo: improvement, this should be able to bin based on the axis bounds?
             ;; or have a seperate argument to say the bounds of binning.
-            (define values-min (apply min converted-values))
-            (define values-max (apply max converted-values))
+            (define values-min (apply min the-values))
+            (define values-max (apply max the-values))
             (define bin-bounds (range values-min
                                       values-max
                                       (/ (- values-max values-min) bins)))
-            (for/list ([a-bin (bin-samples bin-bounds <= converted-values)])
+            (for/list ([a-bin (bin-samples bin-bounds <= the-values)])
               (list (sample-bin-min a-bin)
                     (length (sample-bin-values a-bin))))])]
     [(struct* function ([f f]
@@ -280,24 +270,130 @@
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
        (list x (f x)))]))
 
-;; lltodo: group-conv needs to be taken into consideration for `group-ordering` (that will affect the labels too in the renderer tree conversion above)
-;; perhaps just have a function that converts the data for a renderer and call it at the top just like the raw-data definition.
+;; data-frame? renderer? -> data-frame?
+(define (converter-transform data a-renderer)
+  (match-define (renderer _ (converters x-conv y-conv group-conv))
+    a-renderer)
+  (match a-renderer
+    [(or (struct* points ([x-col (? string? x-col)]
+                          [y-col (? string? y-col)]))
+         (struct* line ([x-col (? string? x-col)]
+                        [y-col (? string? y-col)]))
+         (struct* bars ([x-col (? string? x-col)]
+                        [y-col (? string? y-col)])))
+     (if (or x-conv y-conv)
+         (df-transform-series data
+                              (for/list ([col (list x-col y-col)]
+                                         [f   (list x-conv y-conv)]
+                                         ;; skip doing work if there's no converter
+                                         #:when f)
+                                (list col f)))
+         data)]
+    [(or (struct* stacked-bars ([x-col x-col]
+                            [y-col y-col]
+                            [group-col group-col]))
+         (struct* stacked-area ([x-col x-col]
+                            [y-col y-col]
+                            [group-col group-col])))
+     #;(if (or x-conv y-conv group-conv)
+         (rename
+          (for/data-frame (X Y GROUP)
+            ([{x y group} (in-data-frame data x-col y-col group-col)])
+            (values (if x-conv (x-conv x) x)
+                    (if y-conv (y-conv y) y)
+                    (if group-conv (group-conv group) group)))
+          "X" x-col
+          "Y" y-col
+          "GROUP" group-col)
+         data)
+     (if (or x-conv y-conv group-conv)
+         (df-transform-series data
+                              (for/list ([col (list x-col y-col group-col)]
+                                         [f   (list x-conv y-conv group-conv)]
+                                         ;; skip doing work if there's no converter
+                                         #:when f)
+                                (list col f)))
+         data)]
+    [(struct* histogram ([col col]
+                         [bins bins]))
+     (if x-conv
+         (df-transform-series data (list (list col x-conv)))
+         data)]
+    [else data]))
+
+(define (df-transform-series a-df names-and-fns)
+  (for/fold ([df a-df])
+            ([name+fn (in-list names-and-fns)])
+    (define name (first name+fn))
+    (define fn (second name+fn))
+    (define copy (df-shallow-copy df))
+    (df-add-derived! copy
+                     name
+                     (list name)
+                     (λ (value-in-list) (apply fn value-in-list)))
+    copy))
 
 ;; data-frame? string? string? string?
 ;; ->
 ;; (listof points-list?)
 ;; where points-list? := (listof (list/c real? real?))
+;; Each points-list in the result is sorted by first / x values.
 (define (data->grouped-points data ;; assume that any converters have been applied already
                               x-col
                               y-col
-                              group-col)
-  (define groups (group-ordering data group-col))
+                              group-col
+                              groups
+                              aggregator)
   (define group-datas (split-with data group-col))
   (for*/list ([group (in-list groups)]
               [group-data (in-value (find-group-df group-datas group-col group))])
-    (renderer->plot:data group-data
-                         (make-points #:x x-col
-                                      #:y y-col))))
+    (define plain-points (renderer->plot:data group-data
+                                              (make-points #:x x-col
+                                                           #:y y-col)))
+    (define sorted (sort plain-points < #:key first))
+    (define aggregated
+      (if (or (empty? sorted)
+              (false? aggregator))
+          sorted
+          (aggregate-by-x-values sorted aggregator)))
+    aggregated))
+
+;; non-empty-list? (any/c ... -> any/c) -> non-empty-list?
+(define (aggregate-by-x-values points aggregator)
+  (define (aggregate x ys aggregated)
+    (cons (list x (apply aggregator ys))
+          aggregated))
+  (for/fold ([current-x (first (first points))]
+             [current-ys empty]
+             [aggregated empty]
+             #:result (reverse (if (empty? current-ys)
+                                   aggregated
+                                   (aggregate current-x current-ys aggregated))))
+            ([point (in-list points)])
+    (match-define (list x y) point)
+    (match x
+      [(== current-x) (values current-x
+                              (cons y current-ys)
+                              aggregated)]
+      [new-x (values new-x
+                     (list y)
+                     (aggregate current-x current-ys aggregated))])))
+
+;; (listof points-list?) -> (listof points-list?)
+;; Assumes that all of the points in grouped-points are aligned. See `check-aligned!`.
+(define (grouped-points->stacked-points grouped-points)
+  (for/fold ([last-points #f]
+             [stacked-points empty]
+             #:result (reverse stacked-points))
+            ([points (in-list grouped-points)])
+    (define stacked
+      (if last-points
+          (map (match-lambda** [{(list x y) (list _ y-base)} (list x (+ y y-base))])
+               points
+               last-points)
+          points))
+    (values stacked
+            (cons stacked stacked-points))))
 
 (define (find-group-df df-partitions-by-group-col group-col group)
   (findf (λ (df) (equal? group (any-value-in df group-col)))
@@ -362,6 +458,47 @@
 (define (bar-plot? renderers)
   (and (not (empty? renderers))
        (andmap (disjoin bars? stacked-bars? histogram?) renderers)))
+
+
+(struct p+l (point label))
+(define (renderer->rightmost-points+labels data
+                                           a-renderer)
+  (define renderer-raw-data (renderer->plot:data data a-renderer))
+  (define the-appearance (renderer-appearance a-renderer))
+  (match a-renderer
+    [(or (? line?) (? points?) (? function?))
+     (define sorted-data (sort renderer-raw-data < #:key first))
+     (list (p+l (last sorted-data)
+                (if-auto (appearance-label the-appearance)
+                         (renderer->y-axis-col a-renderer))))]
+    [(struct* stacked-area ([group-col group-col]
+                            [labels? labels?]))
+     (define labels
+       (cond [labels?
+              (map ~a (group-ordering data group-col))]
+             [(and (list? (appearance-label the-appearance))
+                   (= (length renderer-raw-data)
+                      (length (appearance-label the-appearance))))
+              (appearance-label the-appearance)]
+             [else
+              (error 'complot
+                     @~a{
+                         Don't know how to label the stacked area plot.
+                         Either enable automatic labeling with #:labels? #t
+                         or provide a list of labels with #:label
+                         which matches the number of distinct groups in
+                         the data.
+                         })]))
+     (for/list ([points (in-list renderer-raw-data)]
+                [label  (in-list labels)])
+       (p+l (last points) ; leverage the sorting of points that happens in renderer->plot:data
+            label))]))
+
+(define renderer->y-axis-col
+  (match-lambda [(or (struct* points ([y-col y]))
+                     (struct* line ([y-col y]))) y]
+                [(? function?) "function"]))
+
 
 (module+ test
   (require rackunit)
@@ -495,4 +632,61 @@
                      '(18 2)
                      '(19 4)
                      '(20 2)
-                     '(30 2))))
+                     '(30 2)))
+  (check-equal? (renderer->plot:data (row-df [date price ok?]
+                                             1 20.50 "yes"
+                                             2 22 "no"
+                                             3 20 "no"
+                                             4 23 "no"
+                                             4 23 "yes"
+                                             5 26.34 "kinda")
+                                     (make-points #:x "date" #:y "price"
+                                                  #:x-converter (λ (d) (+ d 10))))
+                '((11 20.50)
+                  (12 22)
+                  (13 20)
+                  (14 23)
+                  (14 23)
+                  (15 26.34)))
+  (check-equal? (grouped-points->stacked-points '(((1 2) (2 2) (3 4) (4 1))
+                                                  ((1 2) (2 1) (3 5) (4 1))
+                                                  ((1 1) (2 2) (3 7) (4 2))))
+                '(((1 2) (2 2) (3 4) (4 1))
+                  ((1 4) (2 3) (3 9) (4 2))
+                  ((1 5) (2 5) (3 16) (4 4))))
+
+  (check-equal? (data->grouped-points (row-df [date price ok?]
+                                              1 20.50 "yes"
+                                              2 22 "no"
+                                              2 1 "no"
+                                              3 20 "no"
+                                              4 23 "no"
+                                              4 23 "yes"
+                                              5 26.34 "kinda")
+                                      "date"
+                                      "price"
+                                      "ok?"
+                                      '("yes" "no" "kinda")
+                                      #f)
+                '(((1 20.50) (4 23))
+                  ((2 22) (2 1) (3 20) (4 23))
+                  ((5 26.34))))
+  (check-equal? (aggregate-by-x-values '((2 22) (2 1) (3 20) (3 0) (4 23))
+                                       +)
+                '((2 23) (3 20) (4 23)))
+  (check-equal? (data->grouped-points (row-df [date price ok?]
+                                              1 20.50 "yes"
+                                              2 22 "no"
+                                              2 1 "no"
+                                              3 20 "no"
+                                              4 23 "no"
+                                              4 23 "yes"
+                                              5 26.34 "kinda")
+                                      "date"
+                                      "price"
+                                      "ok?"
+                                      '("yes" "no" "kinda")
+                                      +)
+                '(((1 20.50) (4 23))
+                  ((2 23) (3 20) (4 23))
+                  ((5 26.34)))))

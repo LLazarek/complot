@@ -194,14 +194,15 @@
          (if inverted-bar-plot?
              y-axis?
              x-axis?)))
-  (define this-axis-is-values-of-bar-plot?
-    (and this-is-a-bar-plot?
+  (define this-axis-is-values-of-bar-or-area-plot?
+    (and (or this-is-a-bar-plot?
+             (andmap stacked-area? renderers))
          (if inverted-bar-plot?
              x-axis?
              y-axis?)))
   (values (cond [user-min => values]
                 [this-axis-is-categories-of-bar-plot? #f]
-                [this-axis-is-values-of-bar-plot? (min inferred-min 0)]
+                [this-axis-is-values-of-bar-or-area-plot? (min inferred-min 0)]
                 ;; If can't even infer bounds, just use dummy bounds of [0, 1]
                 [else (or inferred-min 0)])
           (cond [user-max => values]

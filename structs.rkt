@@ -88,7 +88,7 @@
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col invert?))
 (struct stacked-bars renderer (x-col group-col y-col invert? aggregator labels?))
-(struct stacked-area renderer (x-col group-col y-col labels?))
+(struct stacked-area renderer (x-col group-col y-col aggregator labels?))
 (struct histogram renderer (col bins invert?))
 (struct function renderer (f min max))
 
@@ -189,6 +189,7 @@
                            #:y y-col
                            #:colors [colors 'auto]
                            #:alpha [alpha 1]
+                           #:aggregate [aggregator #f]
                            #:labels? [labels? #t]
 
                            #:x-converter [x-converter #f]
@@ -199,6 +200,7 @@
                 x-col
                 group-col
                 y-col
+                aggregator
                 labels?))
 (define-simple-renderer (make-histogram #:x x
                                         #:bins [bins 30]
