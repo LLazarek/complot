@@ -28,6 +28,7 @@
          "util.rkt"
          "error-reporting.rkt"
          (prefix-in plot: plot)
+         (prefix-in plot: plot/utils)
          (prefix-in pict: pict)
          sawzall
          data-frame
@@ -263,51 +264,83 @@
                (plot:plot-font-family)
                (round (* (plot:plot-font-size)
                          (new-legend-label-scale-factor)))))
+  (define (make-label-with-marker label [y-offset #f] [x-offset #f])
+    (define line-width 0.5)
+    (define label-p (if (string? label)
+                        (string->label-pict label)
+                        label))
+    (cond [(and y-offset x-offset)
+           ;; x-offset
+           ;; --------+
+           ;;         |
+           ;;         | y-offset
+           ;;         |
+           ;;         +- label
+           (pict:ht-append (pict:filled-rectangle x-offset line-width
+                                                  #:color "black")
+                           (pict:vl-append (- (/ (pict:pict-height label-p) 2))
+                                           (pict:filled-rectangle line-width y-offset
+                                                                  #:color "black")
+                                           (pict:hc-append 5 (pict:filled-rectangle 5 line-width
+                                                                                    #:color "black")
+                                                           label-p)))]
+          [else label-p]))
   (define (fix-overlaps coords+labels)
-    coords+labels
-    ;; (define-values {overlapping-labels others}
-    ;;   (isolate-overlaps coords+labels))
-    ;; (append others
-    ;;         ;; lltodo wiw: fixing overlapping labels
-    ;;         (for/fol))
-    )
+    (for/fold ([current-bottom 0]
+               [fixed empty]
+               [x-offset 5]
+               #:result fixed)
+              ([coord+label (in-list (sort coords+labels < #:key second))])
+      ;; Assuming that y grows down like so:
+      ;; +--⟶ x
+      ;; |
+      ;; ⇓
+      ;; y
+      (match-define (list x y label color) coord+label)
+      (define δ (max (- current-bottom y) 0))
+      (define label-pict (make-label-with-marker label δ x-offset))
+      (define new-offset (if (zero? δ)
+                             5
+                             (+ x-offset 5)))
+      (values (+ y (pict:pict-height label-pict) 10)
+              (cons (list x y label-pict color) fixed)
+              new-offset)))
 
   (define data (plot-data a-plot))
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
   (define coords+labels
-    (for*/list ([renderer (in-list (plot-renderers a-plot))]
-                [a-p+l (in-list (renderer->rightmost-points+labels data renderer))])
+    (for/list ([renderer (in-list (plot-renderers a-plot))]
+               #:when #t
+               [a-p+l (in-list (renderer->rightmost-points+labels data renderer))]
+               [color (if-auto (appearance-color (renderer-appearance renderer))
+                               (in-naturals))])
       (match-define (p+l rightmost-point label) a-p+l)
       (define dc-coords-of-rightmost-point
         (convert-coords (list->vector rightmost-point)))
       (list (vector-ref dc-coords-of-rightmost-point 0)
             (vector-ref dc-coords-of-rightmost-point 1)
             label
-            (if-auto (appearance-color (renderer-appearance renderer))
-                     "black"))))
+            (match color
+              [(? integer?) (plot:->brush-color color)]
+              [other other]))))
   (define coords+labels/non-overlapping
     (fix-overlaps coords+labels))
   (pict:panorama
    (for/fold ([plot-pict plot-pict])
-             ([coords+label (in-list coords+labels/non-overlapping)])
-     (match-define (list x y label color) coords+label)
-     (define label-pict
-       (if (string? label)
-           (string->label-pict label)
-           label))
+             ([coords+label (in-list coords+labels/non-overlapping)]
+              [i (in-naturals)])
+     (match-define (list x y label-pict color) coords+label)
      (define label-pict+color
        (if (colorize-new-legend-labels?)
            (pict:colorize label-pict
-                          (match color
-                            [(list* c _) c]
-                            [other other]))
+                          color)
            label-pict))
      (pict:pin-over plot-pict
                     (+ x 5)
-                    (- y 10)
+                    y
                     label-pict+color))))
 
-(define colorize-new-legend-labels? (make-parameter #f))
+(define colorize-new-legend-labels? (make-parameter #t))
 
 (define new-legend-label-scale-factor (make-parameter 1.4))
 
