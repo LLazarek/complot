@@ -264,11 +264,13 @@
                (round (* (plot:plot-font-size)
                          (new-legend-label-scale-factor)))))
   (define (fix-overlaps coords+labels)
-    (define-values {overlapping-labels others}
-      (isolate-overlaps coords+labels))
-    (append others
-            ;; lltodo wiw: fixing overlapping labels
-            (for/fol)))
+    coords+labels
+    ;; (define-values {overlapping-labels others}
+    ;;   (isolate-overlaps coords+labels))
+    ;; (append others
+    ;;         ;; lltodo wiw: fixing overlapping labels
+    ;;         (for/fol))
+    )
 
   (define data (plot-data a-plot))
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
