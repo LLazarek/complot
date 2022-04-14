@@ -312,8 +312,10 @@
     (for/list ([renderer (in-list (plot-renderers a-plot))]
                #:when #t
                [a-p+l (in-list (renderer->rightmost-points+labels data renderer))]
-               [color (if-auto (appearance-color (renderer-appearance renderer))
-                               (in-naturals))])
+               [color (match (appearance-color (renderer-appearance renderer))
+                        ['auto (in-naturals)]
+                        [(? list? l) (in-cycle l)]
+                        [single (in-cycle (list single))])])
       (match-define (p+l rightmost-point label) a-p+l)
       (define dc-coords-of-rightmost-point
         (convert-coords (list->vector rightmost-point)))
