@@ -85,8 +85,14 @@
 (struct renderer complot-printable (appearance converters))
 (struct point-label renderer (x y content anchor))
 (struct points renderer (x-col y-col group-col))
+;; todo: a points+lines renderer, since that's almost always what I've wanted with the line renderer
+;; In fact, that perhaps suggests it should just be an option for line: #:with-points? #t
+;; Similarly for stacked-area probably.
 (struct line renderer (x-col y-col))
 (struct bars renderer (x-col y-col invert?))
+;; todo: all groupable things: support specifying group-ordering
+;; todo: stacked-bars: support specifying ordering of bars by total bar height
+;; todo: support grouping for lines
 (struct stacked-bars renderer (x-col group-col y-col invert? aggregator labels?))
 (struct stacked-area renderer (x-col group-col y-col aggregator labels?))
 (struct histogram renderer (col bins invert?))

@@ -20,7 +20,10 @@
          describe
          read-data
          describe
-         render)
+         render
+
+         current-complot-color-map
+         colorize-complot-legend-labels?)
 
 (require "structs.rkt"
          "renderer-conversion.rkt"
@@ -99,7 +102,7 @@
                       #:y-min (or y-min (and (empty? plot:renderers) 0))
                       #:y-max (or y-max (and (empty? plot:renderers) 0))
                       #:legend-anchor (match maybe-legend
-                                        [(legend (and pos (not 'auto)) 'old) pos]
+                                        [(legend (and pos (not 'auto)) _) pos]
                                         [else (plot:plot-legend-anchor)])
                       #:width width
                       #:height height))
@@ -333,7 +336,7 @@
               [i (in-naturals)])
      (match-define (list x y label-pict color) coords+label)
      (define label-pict+color
-       (if (colorize-new-legend-labels?)
+       (if (colorize-complot-legend-labels?)
            (pict:colorize label-pict
                           color)
            label-pict))
@@ -342,7 +345,7 @@
                     y
                     label-pict+color))))
 
-(define colorize-new-legend-labels? (make-parameter #t))
+(define colorize-complot-legend-labels? (make-parameter #t))
 
 (define new-legend-label-scale-factor (make-parameter 1.4))
 
