@@ -1,8 +1,6 @@
-#lang at-exp racket
+#lang at-exp racket/base
 
-;; Provide bindings from racket for when complot is used as a #lang
-(provide (all-from-out "complot.rkt")
-         (all-from-out racket))
+(provide (all-from-out "complot.rkt"))
 (require "complot.rkt")
 
-(module reader syntax/module-reader complot)
+(module reader syntax/module-reader complot/lang)
