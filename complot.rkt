@@ -331,7 +331,7 @@
               [(? integer?) (plot:->brush-color color)]
               [other other]))))
   (define coords+labels/non-overlapping
-    (fix-overlaps coords+labels))
+    (fix-overlaps (remove-duplicates coords+labels)))
   (pict:panorama
    (for/fold ([plot-pict plot-pict])
              ([coords+label (in-list coords+labels/non-overlapping)]
@@ -581,5 +581,23 @@
                                    2019 5.55 5.3 2.1
                                    2020 6 5.7 1))
                 (make-bars #:x "year" #:y "B" #:invert? #t)))
+
+  ;; Shouldn't have two labels, just one
+  (render (with (make-plot (row-df [year A B C]
+                                   2010 4.35 4 6.5
+                                   2011 4.55 4.1 4
+                                   2012 4.75 4.3 4.5
+                                   2013 5 4.8 7
+                                   2014 5.2 5 6.5
+                                   2015 5.5 5.4 4
+                                   2016 5 4.4 3.4
+                                   2017 4.8 4.4 3
+                                   2018 5.05 4.7 3.5
+                                   2019 5.55 5.3 2.1
+                                   2020 6 5.7 1))
+                (make-points #:x "year" #:y "B" #:color "red")
+                (make-line #:x "year" #:y "B" #:color "red")
+                (make-legend)))
+
   (make-x-axis)
   (make-y-axis))
