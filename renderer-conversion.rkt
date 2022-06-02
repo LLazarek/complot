@@ -68,16 +68,19 @@
                          #:alpha (if-auto alpha (plot:point-alpha))
                          #:size (if-auto size (plot:point-size))
                          #:sym (if-auto type (plot:point-sym))
-                         #:label (and add-legend? (or label y-col)))])]
+                         #:label (and add-legend? (or (if-auto label y-col) y-col)))])]
     [(struct* line ([y-col y-col]))
      (plot:lines raw-data
                  #:color (if-auto color (plot:line-color))
                  #:alpha (if-auto alpha (plot:line-alpha))
                  #:width (if-auto size (plot:line-width))
                  #:style (if-auto type (plot:line-style))
-                 #:label (and add-legend? (or label y-col)))]
-    [(struct* bars ([y-col y-col]
+                 #:label (and add-legend? (or (if-auto label y-col) y-col)))]
+    [(struct* bars ([x-col x-col]
+                    [y-col y-col]
                     [invert? invert?]))
+     #:when (or (categorical? data x-col)
+                (categorical? data y-col))
      (plot:discrete-histogram raw-data
                               #:color (if-auto color (plot:rectangle-color))
                               #:alpha (if-auto alpha (plot:rectangle-alpha))
@@ -88,6 +91,14 @@
                                                bar-y-ticks?
                                                bar-x-ticks?)
                               #:label (and add-legend? (if-auto label y-col)))]
+    [(struct* bars ([y-col y-col]
+                    [invert? invert?]))
+     (plot:rectangles (bars-data->rectangles raw-data invert?)
+                      #:color (if-auto color (plot:rectangle-color))
+                      #:alpha (if-auto alpha (plot:rectangle-alpha))
+                      #:line-width (if-auto size (plot:rectangle-line-width))
+                      #:style (if-auto type (plot:rectangle-style))
+                      #:label (and add-legend? (if-auto label y-col)))]
     [(struct* stacked-bars ([x-col x-col]
                             [group-col group-col]
                             [invert? invert?]
@@ -466,7 +477,7 @@
   (define renderer-raw-data (renderer->plot:data data a-renderer))
   (define the-appearance (renderer-appearance a-renderer))
   (match a-renderer
-    [(or (? line?) (? points?) (? function?))
+    [(or (? line?) (? points?) (? function?) (? bars?))
      (define sorted-data (sort renderer-raw-data < #:key first))
      (list (p+l (last sorted-data)
                 (if-auto (appearance-label the-appearance)
@@ -496,9 +507,29 @@
 
 (define renderer->y-axis-col
   (match-lambda [(or (struct* points ([y-col y]))
-                     (struct* line ([y-col y]))) y]
+                     (struct* line ([y-col y]))
+                     (struct* bars ([y-col y]))) y]
                 [(? function?) "function"]))
 
+(define complot-rectangle-width (make-parameter 0.8))
+(define (bars-data->rectangles raw-bars-data invert?)
+  (define xs (map first raw-bars-data))
+  (define x-range (- (apply max xs) (apply min xs)))
+  (define bar-width/2 (/ (* (complot-rectangle-width)
+                            (/ x-range (length xs)))
+                         2))
+  (define bar->rectangle
+    (match-lambda
+      [(list x y)
+       (list (plot:ivl (- x bar-width/2) (+ x bar-width/2))
+             (plot:ivl 0 y))]))
+  (define rectangles-data
+    (map bar->rectangle raw-bars-data))
+  (define (invert-rectangles data)
+    (map (match-lambda [(list x y) (list y x)]) data))
+  (if invert?
+      (invert-rectangles rectangles-data)
+      rectangles-data))
 
 (module+ test
   (require rackunit)

@@ -136,11 +136,11 @@
                                       a)
                                 outpath
                                 #:height 40)]
-    [(? y-axis? a) (render-plot (with (with (make-plot (row-df [x y]
+    [(? y-axis? a) (render-plot (with (make-plot (row-df [x y]
                                                          0 0
                                                          0 1))
                                       (make-points #:x "x" #:y "y" #:alpha 0)
-                                      a) a)
+                                      a)
                                 outpath
                                 #:width 40)]
     [(and (or (struct* point-label ([x x-name] [y y-name]))
@@ -205,7 +205,7 @@
                          (row-df [x] 1))
                         r)
                   outpath)]
-    [(? title? t) (pict:text t)]
+    [(? title? t) (pict:text (title-text t))]
     [(? legend?)  (raise-user-error
                    'complot
                    "Can't render a legend by itself: legends need a renderer to describe")]
@@ -257,7 +257,9 @@
 (define (should-add-new-style-legend? maybe-legend renderers)
   (match* {maybe-legend renderers}
     [{(legend 'auto 'new)
-      (list (or (? line?) (? points?) (? function?) (? stacked-area?)) ...)}
+      (or (list (or (? line?) (? points?) (? function?) (? stacked-area?)) ...)
+          (list-no-order (or (? bars?) (? histogram?))
+                         (or (? line?) (? points?) (? function?) (? stacked-area?)) ...))}
      #t]
     [{_ _} #f]))
 
@@ -367,34 +369,34 @@
                      3 20
                      4 23
                      5 26.34))
-  (with (make-plot (row-df [date price]
-                           1 20.50
-                           2 22
-                           3 20
-                           4 23
-                           5 26.34))
-        (make-points #:x "date" #:y "price" #:alpha 1)
-        (make-x-axis #:min 0 #:max 5)
-        (make-y-axis #:min 0 #:max 30))
-  (with (make-plot (row-df [date price]
-                           1 20.50
-                           2 22
-                           3 20
-                           4 23
-                           5 26.34))
-        (make-points #:x "date" #:y "price" #:alpha 1)
-        (make-line #:x "date" #:y "date")
-        (make-y-axis #:min 0 #:max 30))
-  (with (make-plot (row-df [date price ok?]
-                           1 20.50 "yes"
-                           2 22 "no"
-                           3 20 "no"
-                           4 23 "no"
-                           4 23 "yes"
-                           5 26.34 "kinda"))
-        (make-histogram #:x "ok?")
-        (make-x-axis)
-        (make-y-axis))
+  (render (with (make-plot (row-df [date price]
+                                   1 20.50
+                                   2 22
+                                   3 20
+                                   4 23
+                                   5 26.34))
+                (make-points #:x "date" #:y "price" #:alpha 1)
+                (make-x-axis #:min 0 #:max 5)
+                (make-y-axis #:min 0 #:max 30)))
+  (render (with (make-plot (row-df [date price]
+                                   1 20.50
+                                   2 22
+                                   3 20
+                                   4 23
+                                   5 26.34))
+                (make-points #:x "date" #:y "price" #:alpha 1)
+                (make-line #:x "date" #:y "date")
+                (make-y-axis #:min 0 #:max 30)))
+  (render (with (make-plot (row-df [date price ok?]
+                                   1 20.50 "yes"
+                                   2 22 "no"
+                                   3 20 "no"
+                                   4 23 "no"
+                                   4 23 "yes"
+                                   5 26.34 "kinda"))
+                (make-histogram #:x "ok?")
+                (make-x-axis)
+                (make-y-axis)))
   ;; todo: waiting on support for these tick manipulating options
   #;(with (make-plot (row-df [date price ok?]
                            1 20.50 "yes"
@@ -406,58 +408,58 @@
         (make-histogram #:x "ok?")
         (make-x-axis)
         (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
-  (with (make-plot (row-df [date price ok?]
-                           1 20.50 "yes"
-                           2 22 "no"
-                           3 20 "no"
-                           4 23 "no"
-                           4 23 "yes"
-                           5 26.34 "kinda"))
-        (make-histogram #:x "ok?")
-        (make-x-axis)
-        (make-y-axis #:min 0 #:major-tick-every #f
-                     #:minimum-ticks '(1 1.5)
-                     #:ensure-max-tick? #f
-                     #:ensure-min-tick? #f))
-  (with (make-plot (row-df [major minor money]
-                           "expenses" "food" 20
-                           "expenses" "transport" 30
-                           "expenses" "laundry" 10
-                           "expenses" "laundry" 5
-                           "income" "paycheck" 100
-                           "income" "side-job" 10))
-        (make-stacked-bars #:x "major"
-                           #:group-by "minor"
-                           #:y "money"
-                           #:labels? #f)
-        (make-x-axis)
-        (make-y-axis #:min 0))
-  (with (make-plot (row-df [major minor money]
-                           "expenses" "food" 20
-                           "expenses" "transport" 30
-                           "expenses" "laundry" 10
-                           "expenses" "laundry" 5
-                           "income" "paycheck" 100
-                           "income" "side-job" 10))
-        (make-stacked-bars #:x "major"
-                           #:group-by "minor"
-                           #:y "money")
-        (make-x-axis)
-        (make-y-axis #:min 0))
-  (with (make-plot (row-df [a] 5))
-        (make-function (λ (x) (expt 2 x))
-                       #:min 1 #:max 100)
-        (make-x-axis #:min 1 #:max 100)
-        (make-y-axis #:layout 'log))
+  (render (with (make-plot (row-df [date price ok?]
+                                   1 20.50 "yes"
+                                   2 22 "no"
+                                   3 20 "no"
+                                   4 23 "no"
+                                   4 23 "yes"
+                                   5 26.34 "kinda"))
+                (make-histogram #:x "ok?")
+                (make-x-axis)
+                (make-y-axis #:min 0 #:major-tick-every #f
+                             #:minimum-ticks '(1 1.5)
+                             #:ensure-max-tick? #f
+                             #:ensure-min-tick? #f)))
+  (render (with (make-plot (row-df [major minor money]
+                                   "expenses" "food" 20
+                                   "expenses" "transport" 30
+                                   "expenses" "laundry" 10
+                                   "expenses" "laundry" 5
+                                   "income" "paycheck" 100
+                                   "income" "side-job" 10))
+                (make-stacked-bars #:x "major"
+                                   #:group-by "minor"
+                                   #:y "money"
+                                   #:labels? #f)
+                (make-x-axis)
+                (make-y-axis #:min 0)))
+  (render (with (make-plot (row-df [major minor money]
+                                   "expenses" "food" 20
+                                   "expenses" "transport" 30
+                                   "expenses" "laundry" 10
+                                   "expenses" "laundry" 5
+                                   "income" "paycheck" 100
+                                   "income" "side-job" 10))
+                (make-stacked-bars #:x "major"
+                                   #:group-by "minor"
+                                   #:y "money")
+                (make-x-axis)
+                (make-y-axis #:min 0)))
+  (render (with (make-plot (row-df [a] 5))
+                (make-function (λ (x) (expt 2 x))
+                               #:min 1 #:max 100)
+                (make-x-axis #:min 1 #:max 100)
+                (make-y-axis #:layout 'log)))
 
-  (with (make-plot (row-df [x y y2]
-                           1 5 2
-                           2 3 2
-                           3 6 5))
-        (make-x-axis #:min 0)
-        (make-y-axis #:min 0 #:max 10)
-        (make-bars #:x "x" #:y "y2" #:label "gas")
-        (make-legend #:type 'new))
+  (render (with (make-plot (row-df [x y y2]
+                                   1 5 2
+                                   2 3 2
+                                   3 6 5))
+                (make-x-axis #:min 0)
+                (make-y-axis #:min 0 #:max 10)
+                (make-bars #:x "x" #:y "y2" #:label "gas")
+                (make-legend #:type 'new)))
   (render (with (make-plot (row-df [x y y2]
                                    1 5 2
                                    2 3 2
@@ -536,5 +538,48 @@
                                    "2021-01-07" 20 2))
                 (make-stacked-bars #:x "date" #:y "y" #:group-by "group")))
 
+  (render (with (make-plot (row-df [year A B C]
+                                   2010 4.35 4 6.5
+                                   2011 4.55 4.1 4
+                                   2012 4.75 4.3 4.5
+                                   2013 5 4.8 7
+                                   2014 5.2 5 6.5
+                                   2015 5.5 5.4 4
+                                   2016 5 4.4 3.4
+                                   2017 4.8 4.4 3
+                                   2018 5.05 4.7 3.5
+                                   2019 5.55 5.3 2.1
+                                   2020 6 5.7 1))
+                (make-line #:x "year" #:y "A")
+                (make-bars #:x "year" #:y "B")))
+  ;; Bars shouldn't be super thin here
+  (render (with (make-plot (row-df [year A B C]
+                                   20100 4.35 4 6.5
+                                   20110 4.55 4.1 4
+                                   20120 4.75 4.3 4.5
+                                   20130 5 4.8 7
+                                   20140 5.2 5 6.5
+                                   20150 5.5 5.4 4
+                                   20160 5 4.4 3.4
+                                   20170 4.8 4.4 3
+                                   20180 5.05 4.7 3.5
+                                   20190 5.55 5.3 2.1
+                                   20200 6 5.7 1))
+                (make-line #:x "year" #:y "A")
+                (make-bars #:x "year" #:y "B")))
+
+  (render (with (make-plot (row-df [year A B C]
+                                   2010 4.35 4 6.5
+                                   2011 4.55 4.1 4
+                                   2012 4.75 4.3 4.5
+                                   2013 5 4.8 7
+                                   2014 5.2 5 6.5
+                                   2015 5.5 5.4 4
+                                   2016 5 4.4 3.4
+                                   2017 4.8 4.4 3
+                                   2018 5.05 4.7 3.5
+                                   2019 5.55 5.3 2.1
+                                   2020 6 5.7 1))
+                (make-bars #:x "year" #:y "B" #:invert? #t)))
   (make-x-axis)
   (make-y-axis))
