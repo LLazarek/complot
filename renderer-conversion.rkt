@@ -431,9 +431,9 @@
   ;; (define group-sequence (remove-duplicates (append* (vector->list group-sequences))))
 )
 
-(define (group-ordering data group-col)
+(define (group-ordering data group-col [ordering orderable<?])
   (sort (remove-duplicates (vector->list (df-select data group-col)))
-        orderable<?))
+        ordering))
 
 (define (data->stacked-bar-label-info data
                                       raw-data

@@ -452,6 +452,7 @@
                 (make-x-axis #:min 1 #:max 100)
                 (make-y-axis #:layout 'log)))
 
+  ;; todo: gas label is on the plot
   (render (with (make-plot (row-df [x y y2]
                                    1 5 2
                                    2 3 2
