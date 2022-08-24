@@ -256,11 +256,13 @@
 
 (define (should-add-new-style-legend? maybe-legend renderers)
   (match* {maybe-legend renderers}
-    [{(legend 'auto 'new)
-      (or (list (or (? line?) (? points?) (? function?) (? stacked-area?)) ...)
-          (list-no-order (or (? bars?) (? histogram?))
-                         (or (? line?) (? points?) (? function?) (? stacked-area?)) ...))}
+    [{(legend 'auto 'auto)
+      (or (list (or (? line?) (? points?) (? function?) (? stacked-area?) (? point-label?)) ...)
+          ;; bars get new legend only if mixed with other renderers
+          (and (list _ ... (or (? bars?) (? histogram?)) _ ...)
+               (list _ ... (or (? line?) (? points?) (? function?) (? stacked-area?)) _ ...)))}
      #t]
+    [{(legend _ 'new) _} #t]
     [{_ _} #f]))
 
 (define (add-new-style-legend plot-pict a-plot)
@@ -315,12 +317,17 @@
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
   (define coords+labels
     (for/list ([renderer (in-list (plot-renderers a-plot))]
-               #:when #t
+               #:when (not (point-label? renderer))
                [a-p+l (in-list (renderer->rightmost-points+labels data renderer))]
                [color (match (appearance-color (renderer-appearance renderer))
+                        ;; lltodo: this is actually wrong! The default color for
+                        ;; each renderer is different. Really, this should ask
+                        ;; the renderer what its default color is.
                         ['auto (in-naturals)]
                         [(? list? l) (in-cycle l)]
-                        [single (in-cycle (list single))])])
+                        [single (in-cycle (list single))])]
+               ;; Don't label things that ask for no label!
+               #:when (p+l-label a-p+l))
       (match-define (p+l rightmost-point label) a-p+l)
       (define dc-coords-of-rightmost-point
         (convert-coords (list->vector rightmost-point)))

@@ -95,6 +95,7 @@
                     [invert? invert?]))
      (plot:rectangles (bars-data->rectangles raw-data invert?)
                       #:color (if-auto color (plot:rectangle-color))
+                      #:line-color (if-auto color (plot:rectangle-color))
                       #:alpha (if-auto alpha (plot:rectangle-alpha))
                       #:line-width (if-auto size (plot:rectangle-line-width))
                       #:style (if-auto type (plot:rectangle-style))

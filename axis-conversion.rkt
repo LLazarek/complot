@@ -148,6 +148,10 @@
   (define mins+maxes
     (for/list ([renderer (in-list renderers)])
       (match (renderer->plot:data data renderer)
+        [(list x y)
+         (if x-axis?
+             (list x x)
+             (list y y))]
         [(list (list (? real? xs) _) ...)
          #:when x-axis?
          (real-min/maxes xs)]

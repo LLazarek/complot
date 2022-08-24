@@ -138,7 +138,7 @@
 (define-axis-maker make-y-axis y-axis)
 
 (define (make-legend #:position [position 'auto]
-                     #:type [type 'new])
+                     #:type [type 'auto])
   (legend position type))
 
 (define-simple-macro (define-simple-renderer (id:id formals ...)
