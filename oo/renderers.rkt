@@ -4,6 +4,8 @@
          data-frame
          sawzall
          math/statistics
+         syntax/parse/define
+         "../error-reporting.rkt"
          "../util.rkt")
 
 (define plot-renderer-tree/c any/c)
@@ -67,6 +69,100 @@
     (super-new)
     (init-field text)))
 
+
+(define-simple-macro (define-simple-renderer n-dim:number (id:id formals ...)
+                       (make-it ...))
+  #:with [[[y-conv-def ...] [y-conv ...]] ...] (if (= (syntax->datum #'n-dim) 2)
+                                       #'[[[#:y-converter [y-converter #f]] [[y-converter y-converter]]]]
+                                       #'[])
+  (define (id formals ...
+              #:color [color 'auto]
+              #:alpha [alpha 1]
+              #:size [size 'auto]
+              #:type [type 'auto]
+              #:label [label 'auto]
+
+              #:x-converter [x-converter #f]
+              y-conv-def ... ...)
+    (make-it ...
+         [color color]
+         [alpha alpha]
+         [size size]
+         [type type]
+         [label label]
+         [x-converter x-converter]
+         y-conv ... ...)))
+(define-simple-renderer 2 (make-point-label x y content
+                                            #:anchor [anchor 'auto])
+  (new point-label% [x x] [y y] [content content] [anchor anchor]))
+(define-simple-renderer 2 (make-points #:x x
+                                       #:y y)
+  (new points% [x-col x] [y-col y]))
+(define-simple-renderer 2 (make-line #:x x
+                                     #:y y)
+  (new line% [x-col x] [y-col y]))
+(define-simple-renderer 2 (make-bars #:x x
+                                     #:y y
+                                     #:invert? [invert? #f])
+  (new bars% [x-col x] [y-col y] [invert? invert?]))
+(define-simple-renderer 1 (make-histogram #:x x
+                                          #:invert? [invert? #f]
+                                          #:bins [bins 30])
+  (new histogram% [x-col x] [invert? invert?] [bins bins]))
+
+(define-simple-macro (define-simple-3v-renderer (id:id formals ...)
+                       (make-it ...))
+  (define (id formals ...
+              #:colors [colors 'auto]
+              #:alphas [alphas 1]
+              #:size [size 'auto]
+              #:type [type 'auto]
+              #:labels [labels 'auto]
+
+              #:aggregate [aggregator 'auto]
+
+              #:x-converter [x-converter #f]
+              #:y-converter [y-converter #f]
+              #:group-converter [group-converter #f])
+    (make-it ...
+         [colors colors]
+         [alphas alphas]
+         [size size]
+         [type type]
+         [labels labels]
+         [aggregator aggregator]
+         [x-converter x-converter]
+         [y-converter y-converter]
+         [group-converter group-converter])))
+
+(define-simple-3v-renderer (make-stacked-bars #:x x-col
+                                              #:group-by group-col
+                                              #:y y-col
+                                              #:invert? [invert? #f]
+                                              #:auto-label? [auto-label? #t])
+  (new stacked-bars%
+       [x-col x-col]
+                 [y-col y-col]
+                 [group-col group-col]
+                 [invert? invert?]
+                 [labels? auto-label?]))
+
+(define-simple-3v-renderer (make-stacked-area #:x x-col
+                                              #:group-by group-col
+                                              #:y y-col
+                                              #:auto-label? [auto-label? #t])
+  (new stacked-area%
+       [x-col x-col]
+                 [y-col y-col]
+                 [group-col group-col]
+                 [labels? auto-label?]))
+                                              
+(define-simple-renderer 1 (make-function f
+                                         #:min min
+                                         #:max max)
+  (new function% [f f] [min min] [max max]))
+
+
 (define single-mark-renderer%
   (class complot-printable%
     (super-new)
@@ -93,7 +189,7 @@
     (super-new)
     (init-field y-col
                 y-converter)
-    (define/public (get-label)
+    (define/override (get-label)
       (if-auto (get-field label this)
                (get-field y-col this)))))
 
@@ -113,7 +209,11 @@
                 y-col
                 group-col
                 group-ordering
-                [group-aggregator +])))
+                [group-aggregator +])
+    (define/public (base-axis) 'x)
+    (define/public (creates-own-base-axis?) #f)
+    (define/public (has-categorical-base-axis?) #f)))
+
 
 (define point-label%
   (class* single-mark-renderer% (renderer<%>)
@@ -124,10 +224,7 @@
       (plot:point-label (list x y) content
                         #:anchor (or anchor (plot:label-anchor))
                         #:angle (or angle (plot:label-angle))))
-    (define/public (rightmost-points+labels df) empty)
-    (define/public (base-axis) 'x)
-    (define/public (creates-own-base-axis?) #f)
-    (define/public (has-categorical-base-axis?) #f)))
+    (define/public (rightmost-points+labels df) empty)))
 
 (define (mixin:->plot-data-direct-x-and-y c)
   (class c
@@ -157,6 +254,7 @@
                                            get-default-size
                                            get-default-))
 
+;; lltodo: should have mixin that adds a get-color method which does this if-auto logic. You just pass in what the default color should be.
 (define points%
   (class (mixin:rightmost-points+labels-direct-x-and-y
           (mixin:->plot-data-direct-x-and-y
@@ -215,7 +313,7 @@
 (define (mixin:invertable c)
   (class c
     (super-new)
-    (inherit-field invert?)
+    (init-field invert?)
     (define/override (base-axis)
       (if invert? 'y 'x))))
 
@@ -289,6 +387,25 @@
       (sort (remove-duplicates (vector->list (df-select data group-col)))
             (get-group-ordering)))))
 
+(define (mixin:multicolored c)
+  (class c
+    (super-new)
+    (inherit-field colors)
+    (define/public (get-color-sequence)
+      (match colors
+        ['auto (in-naturals)]
+        [(? list? l)
+         (stream-append (list->stream l)
+                        (stream-remove* (in-naturals) l))]
+        [else (error 'get-color-sequence "bad colors field value")]))))
+
+(define (stream-remove* s to-remove)
+  (stream-filter s (λ (v) (not (member v to-remove)))))
+
+(define (list->stream l)
+  (for/stream ([v (in-list l)])
+    v))
+
 (define (sort-data-by-x-col-then-groups data x-col group-col group-ordering)
   (define sorted-by-x (reorder data x-col))
   (define grouped-by-x (group-with sorted-by-x x-col))
@@ -314,7 +431,7 @@
   (vector-ref (df-select data col) 0))
 
 (define stacked-bars%
-  (class (mixin:groupable (mixin:invertable renderer-multi-v%))
+  (class (mixin:multicolored (mixin:groupable (mixin:invertable renderer-multi-v%)))
     (super-new)
     (init-field [auto-label? #f])
     (inherit get-groups
@@ -414,8 +531,7 @@
     [else #t]))
 
 (define histogram%
-  (mixin:invertable
-   (class renderer-1v%
+   (class (mixin:invertable renderer-1v%)
      (super-new)
      (init-field [bins 30])
      (inherit-field invert?
@@ -461,21 +577,42 @@
                                                ['y bar-y-ticks?])
                                 #:label (and add-legend?
                                              (or (get-field label this)
-                                                 (~a x-col " count"))))))))
+                                                 (~a x-col " count")))))))
 
+
+;; (listof points-list?) -> (listof points-list?)
+;; Assumes that all of the points in grouped-points are aligned. See `check-aligned!`.
+(define (grouped-points->stacked-points grouped-points)
+  (for/fold ([last-points #f]
+             [stacked-points empty]
+             #:result (reverse stacked-points))
+            ([points (in-list grouped-points)])
+    (define stacked
+      (if last-points
+          (map (match-lambda** [{(list x y) (list _ y-base)} (list x (+ y y-base))])
+               points
+               last-points)
+          points))
+    (values stacked
+            (cons stacked stacked-points))))
 
 (define stacked-area%
-  (class (mixin:groupable renderer-multi-v%)
+  (class (mixin:multicolored (mixin:groupable renderer-multi-v%))
     (super-new)
     (inherit get-groups
              get-group-ordering)
-    (inherit-field group-aggregator)
+    (inherit-field group-aggregator
+                   x-col
+                   y-col
+                   group-col
+                   labels
+                   alphas)
     (define/public (->plot-data data)
       (define group-sequence (get-groups data))
       (define grouped-points
         (data->grouped-points data x-col y-col group-col group-sequence group-aggregator))
       (check-aligned! grouped-points
-                      a-renderer
+                      this
                       group-sequence)
       (grouped-points->stacked-points grouped-points))
 
@@ -489,9 +626,10 @@
                  [last-group-points #f]
                  #:result plot:renderers)
                 ([group (in-list groups)]
-                 [group-points (in-list raw-data)]
-                 [color (color-sequence)]
-                 [group-label (in-list (if-auto label groups))])
+                 [group-points (in-list (send this ->plot-data data))]
+                 [color (send this get-color-sequence)]
+                 [alpha (if-auto alphas (in-cycle (in-value (plot:interval-alpha))))]
+                 [group-label (in-list (if-auto labels groups))])
         (define this-renderer
           (plot:lines-interval (or last-group-points
                                    (list (->0 (argmin first group-points))
@@ -500,7 +638,7 @@
                                #:color color
                                #:line1-color color
                                #:line2-width 0
-                               #:alpha (if-auto alpha (plot:interval-alpha))
+                               #:alpha alpha
                                #:label (and add-legend? (~a group-label))))
         (values (cons this-renderer plot:renderers)
                 group-points)))
@@ -559,6 +697,11 @@
                 min ; real?
                 max ; real?
                 )
+    (inherit-field color
+                   alpha
+                   size
+                   type
+                   label)
     (define/public (->plot-data data)
       (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
         (list x (f x))))
@@ -576,17 +719,30 @@
                      #:label (and add-legend? label)))))
 
 ;; --- The plot struct ---
-(struct plot complot-printable (data x-axis y-axis legend title renderers))
+#;(struct plot complot-printable (data x-axis y-axis legend title renderers))
 
 ;; Some convenience macros
-(define-simple-macro (plot-set a-plot field v)
+#;(define-simple-macro (plot-set a-plot field v)e
   (struct-copy plot a-plot [field v]))
-(define-simple-macro (plot-update a-plot field f v)
+#;(define-simple-macro (plot-update a-plot field f v)
   #:with get-field (format-id this-syntax "plot-~a" #'field)
   (struct-copy plot a-plot [field (f v (get-field a-plot))]))
 
-(define (make-plot data)
+#;(define (make-plot data)
   (plot data #f #f #f #f empty))
+
+
+(define plot%
+  (class complot-printable%
+    (super-new)
+    (init-field data
+                [x-axis #f]
+                [y-axis #f]
+                [legend #f]
+                [title #f]
+                [renderers empty])))
+(define (make-plot data)
+  (new plot% [data data]))
 
 (define-simple-macro (define-axis-maker name axis)
   (define (name #:label [label #f]
@@ -600,7 +756,7 @@
                 #:layout [layout 'auto]
                 #:min [min #f]
                 #:max [max #f])
-    (new axis
+    (new axis%
          [label label]
          [ticks? ticks?]
          [major-tick-every major-tick-every]
@@ -617,83 +773,7 @@
 
 (define (make-legend #:position [position 'auto]
                      #:type [type 'new])
-  (new legend
+  (new legend%
        [position position]
        [type type]))
-
-(define-simple-macro (define-simple-renderer (id:id formals ...)
-                       (s e ...))
-  (define (id formals ...
-              #:color [color 'auto]
-              #:alpha [alpha 1]
-              #:size [size 'auto]
-              #:type [type 'auto]
-              #:label [label 'auto]
-
-              #:x-converter [x-converter #f]
-              #:y-converter [y-converter #f]
-              #:group-converter [group-converter #f])
-    (s (appearance color alpha size type label)
-       (converters x-converter y-converter group-converter)
-       e ...)))
-(define-simple-renderer (make-point-label x y content
-                                          #:anchor [anchor 'auto])
-  (point-label x y content anchor))
-(define-simple-renderer (make-points #:x x
-                                     #:y y
-                                     #:group-by [group-col #f]) ;; todo: support dot plots
-  (points x y group-col))
-(define-simple-renderer (make-line #:x x
-                                   #:y y)
-  (line x y))
-(define-simple-renderer (make-bars #:x x
-                                   #:y y
-                                   #:invert? [invert? #f])
-  (bars x y invert?))
-(define (make-stacked-bars #:x x-col
-                           #:group-by group-col
-                           #:y y-col
-                           #:colors [colors 'auto]
-                           #:alpha [alpha 1]
-                           #:invert? [invert? #f]
-                           #:aggregate [aggregator +]
-                           #:labels? [labels? #t]
-
-                           #:x-converter [x-converter #f]
-                           #:y-converter [y-converter #f]
-                           #:group-converter [group-converter #f])
-  (stacked-bars (appearance colors alpha 'auto 'auto 'auto)
-                (converters x-converter y-converter group-converter)
-                x-col
-                group-col
-                y-col
-                invert?
-                aggregator
-                labels?))
-(define (make-stacked-area #:x x-col
-                           #:group-by group-col
-                           #:y y-col
-                           #:colors [colors 'auto]
-                           #:alpha [alpha 1]
-                           #:aggregate [aggregator #f]
-                           #:labels? [labels? #t]
-
-                           #:x-converter [x-converter #f]
-                           #:y-converter [y-converter #f]
-                           #:group-converter [group-converter #f])
-  (stacked-area (appearance colors alpha 'auto 'auto 'auto)
-                (converters x-converter y-converter group-converter)
-                x-col
-                group-col
-                y-col
-                aggregator
-                labels?))
-(define-simple-renderer (make-histogram #:x x
-                                        #:bins [bins 30]
-                                        #:invert? [invert? #f])
-  (histogram x bins invert?))
-(define-simple-renderer (make-function f
-                                       #:min min
-                                       #:max max)
-  (function f min max))
 
