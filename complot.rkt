@@ -5,6 +5,8 @@
                      [make-y-axis        y-axis]
                      [make-legend        legend]
                      [make-point-label   point-label]
+                     [make-horizontal-line horizontal-line]
+                     [make-vertical-line vertical-line]
                      [make-points        points]
                      [make-line          line]
                      [make-bars          bars]
@@ -241,26 +243,29 @@
                                [#t write]
                                [#f display]
                                [else (λ (p port) (print p port mode))]))
+                           (define fallback (thunk* (recur @~a{#<complot @(object-name thing)>}
+                                                      port)))
                            (cond [(and #;(port-writes-special? port)
                                        ;; ^ rendering in racket-mode repl seems to not want
                                        ;; this condition
                                        mode
                                        (not (currently-printing-complot-thing?)))
-                                  (parameterize ([currently-printing-complot-thing? #t])
-                                    (recur (render thing) port))]
-                                 [else (recur @~a{#<complot @(object-name thing)>}
-                                              port)])))
+                                  ;; Handler prevents errors from `render` masking the
+                                  ;; original exn that might be trying to print the thing
+                                  (with-handlers ([exn:fail? fallback])
+                                    (parameterize ([currently-printing-complot-thing? #t])
+                                      (recur (render thing) port)))]
+                                 [else (fallback)])))
 
 
 (define (snoc x l) (append l (list x)))
 
 (define (should-add-new-style-legend? maybe-legend renderers)
   (match* {maybe-legend renderers}
-    [{(legend 'auto 'auto)
-      (or (list (or (? line?) (? points?) (? function?) (? stacked-area?) (? point-label?)) ...)
-          ;; bars get new legend only if mixed with other renderers
-          (and (list _ ... (or (? bars?) (? histogram?)) _ ...)
-               (list _ ... (or (? line?) (? points?) (? function?) (? stacked-area?)) _ ...)))}
+    [{(legend 'auto 'new)
+      (or (list (or (? line?) (? points?) (? function?) (? stacked-area?) (? line-marker?)) ...)
+          (list-no-order (or (? bars?) (? histogram?))
+                         (or (? line?) (? points?) (? function?) (? stacked-area?)) ...))}
      #t]
     [{(legend _ 'new) _} #t]
     [{_ _} #f]))
@@ -315,6 +320,7 @@
 
   (define data (plot-data a-plot))
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
+  (define-values {x-min x-max} (infer-raw-data-bounds data (plot-renderers a-plot) #t))
   (define coords+labels
     (for/list ([renderer (in-list (plot-renderers a-plot))]
                #:when (not (point-label? renderer))
@@ -328,7 +334,11 @@
                         [single (in-cycle (list single))])]
                ;; Don't label things that ask for no label!
                #:when (p+l-label a-p+l))
-      (match-define (p+l rightmost-point label) a-p+l)
+      (match-define (p+l rightmost-point* label) a-p+l)
+      (define rightmost-point (match rightmost-point*
+                                [(? number? y)
+                                 (list x-max y)]
+                                [other other]))
       (define dc-coords-of-rightmost-point
         (convert-coords (list->vector rightmost-point)))
       (list (vector-ref dc-coords-of-rightmost-point 0)
@@ -406,15 +416,15 @@
                 (make-y-axis)))
   ;; todo: waiting on support for these tick manipulating options
   #;(with (make-plot (row-df [date price ok?]
-                           1 20.50 "yes"
-                           2 22 "no"
-                           3 20 "no"
-                           4 23 "no"
-                           4 23 "yes"
-                           5 26.34 "kinda"))
-        (make-histogram #:x "ok?")
-        (make-x-axis)
-        (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
+                             1 20.50 "yes"
+                             2 22 "no"
+                             3 20 "no"
+                             4 23 "no"
+                             4 23 "yes"
+                             5 26.34 "kinda"))
+          (make-histogram #:x "ok?")
+          (make-x-axis)
+          (make-y-axis #:min 0 #:major-tick-every 1 #:minor-ticks-between-major 0))
   (render (with (make-plot (row-df [date price ok?]
                                    1 20.50 "yes"
                                    2 22 "no"
@@ -496,33 +506,33 @@
                 (make-x-axis #:max 30)
                 (make-legend #:type 'old)))
   (render (with (make-plot (row-df [date price categ]
-                             1 20.50 1
-                             1 22 2
-                             2 20 2
-                             2 23 1
-                             2 26.34 2))
-          (make-stacked-bars #:x "date" #:y "price" #:group-by "categ")
-          (make-y-axis)
-          (make-x-axis)
-          (make-legend #:type 'old)))
+                                   1 20.50 1
+                                   1 22 2
+                                   2 20 2
+                                   2 23 1
+                                   2 26.34 2))
+                (make-stacked-bars #:x "date" #:y "price" #:group-by "categ")
+                (make-y-axis)
+                (make-x-axis)
+                (make-legend #:type 'old)))
   (render (with (make-plot (row-df [date price categ]
-                             1 20.50 1
-                             1 22 2
-                             2 20 2
-                             2 23 1
-                             2 26.34 2))
-          (make-stacked-bars #:x "date" #:y "price" #:group-by "categ" #:invert? #t)
-          (make-y-axis)
-          (make-x-axis)
-          (make-legend #:type 'old)))
+                                   1 20.50 1
+                                   1 22 2
+                                   2 20 2
+                                   2 23 1
+                                   2 26.34 2))
+                (make-stacked-bars #:x "date" #:y "price" #:group-by "categ" #:invert? #t)
+                (make-y-axis)
+                (make-x-axis)
+                (make-legend #:type 'old)))
 
   (render (with (make-plot (row-df [date price ok?]
-                              1 20.50 "yes"
-                              2 22 "no"
-                              3 20 "no"
-                              4 23 "no"
-                              4 23 "yes"
-                              5 26.34 "kinda"))
+                                   1 20.50 "yes"
+                                   2 22 "no"
+                                   3 20 "no"
+                                   4 23 "no"
+                                   4 23 "yes"
+                                   5 26.34 "kinda"))
                 (make-histogram #:x "date")
                 (make-x-axis)
                 (make-y-axis)))
@@ -606,6 +616,39 @@
                 (make-points #:x "year" #:y "B" #:color "red")
                 (make-line #:x "year" #:y "B" #:color "red")
                 (make-legend)))
+  (render (with (make-plot (row-df [year A B C]
+                                   2010 4.35 4 6.5
+                                   2011 4.55 4.1 4
+                                   2012 4.75 4.3 4.5
+                                   2013 5 4.8 7
+                                   2014 5.2 5 6.5
+                                   2015 5.5 5.4 4
+                                   2016 5 4.4 3.4
+                                   2017 4.8 4.4 3
+                                   2018 5.05 4.7 3.5
+                                   2019 5.55 5.3 2.1
+                                   2020 6 5.7 1))
+                (make-points #:x "year" #:y "B" #:color "red")
+                (make-line #:x "year" #:y "B" #:color "red")
+                (make-legend)
+                (make-horizontal-line 5 #:type 'long-dash)))
+
+  (render (with (make-plot (row-df [year A B C]
+                                   2010 4.35 4 6.5
+                                   2011 4.55 4.1 4
+                                   2012 4.75 4.3 4.5
+                                   2013 5 4.8 7
+                                   2014 5.2 5 6.5
+                                   2015 5.5 5.4 4
+                                   2016 5 4.4 3.4
+                                   2017 4.8 4.4 3
+                                   2018 5.05 4.7 3.5
+                                   2019 5.55 5.3 2.1
+                                   2020 6 5.7 1))
+                (make-points #:x "year" #:y "B" #:color "red")
+                (make-line #:x "year" #:y "B" #:color "red")
+                (make-legend)
+                (make-vertical-line 2015 #:type 'long-dash)))
 
   (make-x-axis)
   (make-y-axis))
