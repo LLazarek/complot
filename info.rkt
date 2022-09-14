@@ -9,4 +9,5 @@
                "plot-gui-lib"
                "plot-lib"
                "pict-lib"
-               "math-lib"))
+               "math-lib"
+               "sweet-exp-lib"))
