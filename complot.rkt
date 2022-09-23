@@ -25,9 +25,11 @@
          current-complot-color-map
          colorize-complot-legend-labels?)
 
-(require "structs.rkt"
-         "renderer-conversion.rkt"
+(require "plot.rkt"
+         "renderers.rkt"
+         "elements.rkt"
          "axis-conversion.rkt"
+         "basics.rkt"
          "util.rkt"
          "error-reporting.rkt"
          (prefix-in plot: plot)
@@ -36,30 +38,6 @@
          sawzall
          data-frame
          file/convertible)
-
-(define (with a-plot . things)
-  (define (with-one a-plot a-thing)
-    (match a-thing
-      [(? x-axis? axis)
-       (plot-set a-plot x-axis axis)]
-      [(? y-axis? axis)
-       (plot-set a-plot y-axis axis)]
-      [(? legend? legend)
-       (plot-set a-plot legend legend)]
-      [(title text)
-       (plot-set a-plot title text)]
-
-      [(? renderer? r)
-       (plot-update a-plot renderers snoc r)]
-
-      [something-else
-       (report-non-complot-argument! a-plot something-else "add-to (aka with)")]))
-  (unless (plot? a-plot)
-    (report-non-complot-argument! a-plot #f "add-to (aka with)"))
-  (match things
-    [(cons a-thing more)
-     (apply with (with-one a-plot a-thing) more)]
-    ['() a-plot]))
 
 (define current-complot-color-map (make-parameter 'tab10))
 
@@ -76,14 +54,14 @@
     (if y-axis
         (y-axis->plot:axis y-axis data renderers)
         (list #f #f #f empty #f)))
-  (define new-style-legend? (should-add-new-style-legend? maybe-legend renderers))
+  (define legend-types (determine-legend-type maybe-legend renderers))
   (define plot:renderers
     (renderers->plot:renderer-tree data
                                    renderers
                                    #:bar-x-ticks? add-bar-x-ticks?
                                    #:bar-y-ticks? add-bar-y-ticks?
-                                   #:legend? (and maybe-legend
-                                                  (not new-style-legend?))))
+                                   #:legend? (member 'old legend-types)
+                                   #:legend-skip-new? (member 'new legend-types)))
   (parameterize ([plot:plot-title           title]
                  [plot:plot-x-label         (axis->label x-axis)]
                  [plot:plot-y-label         (axis->label y-axis)]
@@ -102,12 +80,13 @@
                       #:y-min (or y-min (and (empty? plot:renderers) 0))
                       #:y-max (or y-max (and (empty? plot:renderers) 0))
                       #:legend-anchor (match maybe-legend
-                                        [(legend (and pos (not 'auto)) _) pos]
-                                        [else (plot:plot-legend-anchor)])
+                                        [#f (plot:plot-legend-anchor)]
+                                        [(legend pos _)
+                                         (if-auto pos (plot:plot-legend-anchor))])
                       #:width width
                       #:height height))
     (define plot-pict+legend
-      (cond [new-style-legend?
+      (cond [(member 'new legend-types)
              (add-new-style-legend the-plot-pict a-plot)]
             [else the-plot-pict]))
     (if outpath
@@ -122,6 +101,23 @@
                                 out)))
         plot-pict+legend)))
 
+(define (renderers->plot:renderer-tree data
+                                       renderers
+                                       #:bar-x-ticks? add-bar-x-ticks?
+                                       #:bar-y-ticks? add-bar-y-ticks?
+                                       #:legend? legend?
+                                       #:legend-skip-new? skip-legend-for-new-style-supporting-renderers?)
+  (map (λ (o)
+         (send o
+               ->plot-renderer-tree
+               data
+               #:bar-x-ticks? add-bar-x-ticks?
+               #:bar-y-ticks? add-bar-y-ticks?
+               #:legend? (and legend?
+                              (not (and skip-legend-for-new-style-supporting-renderers?
+                                        (equal? (send o legend-compatibility) 'new))))))
+       renderers))
+
 (define (render thing [outpath #f]
                 #:width [width (plot:plot-width)]
                 #:height [height (plot:plot-height)])
@@ -129,30 +125,33 @@
     [(? plot? p) (render-plot p outpath
                               #:width width
                               #:height height)]
-    [(? x-axis? a) (render-plot (with (make-plot (row-df [x y]
-                                                         0 0
-                                                         1 0))
-                                      (make-points #:x "x" #:y "y" #:alpha 0)
-                                      a)
-                                outpath
-                                #:height 40)]
-    [(? y-axis? a) (render-plot (with (make-plot (row-df [x y]
-                                                         0 0
-                                                         0 1))
-                                      (make-points #:x "x" #:y "y" #:alpha 0)
-                                      a)
-                                outpath
-                                #:width 40)]
-    [(and (or (struct* point-label ([x x-name] [y y-name]))
-              (struct* points ([x-col x-name] [y-col y-name]) )
-              (struct* line ([x-col x-name] [y-col y-name]) )
-              (struct* bars ([x-col x-name] [y-col y-name]) ))
-          r)
+    [(? x-axis? a)
+     (render-plot (with (make-plot (row-df [x y]
+                                           0 0
+                                           1 0))
+                        (make-points #:x "x" #:y "y" #:alpha 0)
+                        a)
+                  outpath
+                  #:height 40)]
+    [(? y-axis? a)
+     (render-plot (with (make-plot (row-df [x y]
+                                           0 0
+                                           1 0))
+                        (make-points #:x "x" #:y "y" #:alpha 0)
+                        a)
+                  outpath
+                  #:width 40)]
+    [(? (or/c (is-a?/c point-label%)
+              (is-a?/c points%)
+              (is-a?/c line%)
+              (is-a?/c points+line%)
+              (is-a?/c bars%))
+        r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
                          ;; illustrate the different kinds
                          ;; of renderers
-                         (row-df [(~a x-name) (~a y-name)]
+                         (row-df [(~a (get-field x-col r)) (~a (get-field y-col r))]
                                  1 2
                                  2 2
                                  3 7
@@ -165,18 +164,16 @@
                                  10 3))
                         r)
                   outpath)]
-    [(and (or (struct* stacked-bars ([x-col x-name]
-                                     [group-col group-name]
-                                     [y-col y-name]))
-              (struct* stacked-area ([x-col x-name]
-                                     [group-col group-name]
-                                     [y-col y-name])))
-          r)
+    [(? (or/c (is-a?/c stacked-bars%)
+              (is-a?/c stacked-area%))
+        r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
                          ;; illustrate the different kinds
                          ;; of renderers
-                         (row-df [(~a x-name) (~a y-name) (~a group-name)]
+                         (row-df [(~a (get-field x-col r))
+                                  (~a (get-field y-col r))
+                                  (~a (get-field group-col r))]
                                  1 2 "A"
                                  2 2 "A"
                                  3 7 "A"
@@ -186,18 +183,18 @@
                                  ))
                         r)
                   outpath)]
-    [(and (struct* histogram ([col x-name]))
-          r)
+    [(? (is-a?/c histogram%) r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
                          ;; illustrate the different kinds
                          ;; of renderers
-                         (column-df [(~a x-name) (list->vector
-                                                  (for/list ([i (in-range 100)])
-                                                    (random 100)))]))
+                         (column-df [(~a (~a (get-field x-col r)))
+                                     (list->vector
+                                      (for/list ([i (in-range 100)])
+                                        (random 100)))]))
                         r)
                   outpath)]
-    [(? function? r)
+    [(? (is-a?/c function%) r)
      (render-plot (with (make-plot
                          ;; some arbitrary data that will
                          ;; illustrate the different kinds
@@ -205,10 +202,11 @@
                          (row-df [x] 1))
                         r)
                   outpath)]
-    [(? title? t) (pict:text (title-text t))]
-    [(? legend?)  (raise-user-error
-                   'complot
-                   "Can't render a legend by itself: legends need a renderer to describe")]
+    [(title text) (pict:text text)]
+    [(? legend?)
+     (raise-user-error
+      'complot
+      "Can't render a legend by itself: legends need a renderer to describe")]
     [something-else
      (report-non-complot-argument! (make-plot #f)
                                    something-else
@@ -251,17 +249,31 @@
                                  [else (recur @~a{#<complot @(object-name thing)>}
                                               port)])))
 
-
-(define (snoc x l) (append l (list x)))
-
-(define (should-add-new-style-legend? maybe-legend renderers)
-  (match* {maybe-legend renderers}
+;; (or/c legend? #f) (listof (is-a?/c renderer<%>)) -> (listof (or/c 'new 'old))
+(define (determine-legend-type maybe-legend renderers)
+  (match* {maybe-legend
+           (map (sender legend-default)
+                renderers)
+           (map (sender legend-compatibility)
+                renderers)}
+    [{(or (legend 'auto 'auto)
+          (legend 'auto 'new))
+      (list 'new ...) ;; all default to new, easy
+      _}
+     '(new)]
+    [{(legend 'auto 'auto)
+      (list-no-order 'new 'old _ ...) ;; some default some don't, then mix
+      _}
+     '(new old)]
     [{(legend 'auto 'new)
-      (or (list (or (? line?) (? points?) (? function?) (? stacked-area?)) ...)
-          (list-no-order (or (? bars?) (? histogram?))
-                         (or (? line?) (? points?) (? function?) (? stacked-area?)) ...))}
-     #t]
-    [{_ _} #f]))
+      (list-no-order 'new 'old _ ...) ;; some default,
+      (list 'new ...)}                ;; but all support new
+     '(new)]
+    [{(? legend?) _ _}
+     ;; otherwise fall back on old
+     '(old)]
+    [{#f _ _}
+     empty]))
 
 (define (add-new-style-legend plot-pict a-plot)
   (define (string->label-pict label)
@@ -314,14 +326,9 @@
   (define data (plot-data a-plot))
   (define convert-coords (plot:plot-pict-plot->dc plot-pict))
   (define coords+labels
-    (for/list ([renderer (in-list (plot-renderers a-plot))]
-               #:when #t
-               [a-p+l (in-list (renderer->rightmost-points+labels data renderer))]
-               [color (match (appearance-color (renderer-appearance renderer))
-                        ['auto (in-naturals)]
-                        [(? list? l) (in-cycle l)]
-                        [single (in-cycle (list single))])])
-      (match-define (p+l rightmost-point label) a-p+l)
+    (for*/list ([renderer (in-list (plot-renderers a-plot))]
+                [a-label-info (in-list (send renderer new-style-legend-labels data))])
+      (match-define (label-info rightmost-point label color) a-label-info)
       (define dc-coords-of-rightmost-point
         (convert-coords (list->vector rightmost-point)))
       (list (vector-ref dc-coords-of-rightmost-point 0)
@@ -431,7 +438,7 @@
                 (make-stacked-bars #:x "major"
                                    #:group-by "minor"
                                    #:y "money"
-                                   #:labels? #f)
+                                   #:auto-label? #f)
                 (make-x-axis)
                 (make-y-axis #:min 0)))
   (render (with (make-plot (row-df [major minor money]

@@ -5,8 +5,7 @@
          axis->label
          axis->transform+ticks)
 
-(require "structs.rkt"
-         "renderer-conversion.rkt"
+(require "elements.rkt"
          (prefix-in plot: plot))
 
 (define (axis->label maybe-axis)
@@ -91,7 +90,7 @@
         empty))
   (define add-bar-ticks?
     (and (axis-ticks? an-axis)
-         (bar-plot? renderers)
+         (all-renderers-of-type? 'bar renderers)
          (not (equal? (plot:ticks-layout plot:ticks-thing)
                       plot:no-ticks-layout))))
   (list the-min
@@ -109,6 +108,11 @@
                       (plot:x-tick-lines)
                       (plot:y-tick-lines))
                   empty))))
+
+(define (all-renderers-of-type? type renderers)
+  (and (not (empty? renderers))
+       (for/and ([r renderers])
+         (equal? (send r mark-type) type))))
 
 (define (axis->transform+ticks axis)
   (define plot:transform
@@ -135,19 +139,15 @@
   (list plot:transform
         (plot:ticks plot:layout plot:format)))
 
-(define inverted-renderer?
-  (match-lambda [(or (struct* bars ([invert? invert?]))
-                     (struct* stacked-bars ([invert? invert?]))
-                     (struct* histogram ([invert? invert?])))
-                 invert?]
-                [else #f]))
+(define (inverted-renderer? r)
+  (equal? (send r base-axis) 'y))
 
 (define (infer-raw-data-bounds data renderers x-axis? #|otherwise y|#)
   (define (real-min/maxes vs)
     (list (apply min vs) (apply max vs)))
   (define mins+maxes
     (for/list ([renderer (in-list renderers)])
-      (match (renderer->plot:data data renderer)
+      (match (send renderer ->plot-data data)
         [(list (list (? real? xs) _) ...)
          #:when x-axis?
          (real-min/maxes xs)]
@@ -179,7 +179,7 @@
 
 (define (infer-bounds data renderers x-axis? user-min user-max)
   (define y-axis? (not x-axis?))
-  (define this-is-a-bar-plot? (bar-plot? renderers))
+  (define this-is-a-bar-plot? (all-renderers-of-type? 'bar renderers))
   (define inverted-bar-plot?
     (and this-is-a-bar-plot?
          (andmap inverted-renderer? renderers)))
@@ -196,7 +196,7 @@
              x-axis?)))
   (define this-axis-is-values-of-bar-or-area-plot?
     (and (or this-is-a-bar-plot?
-             (andmap stacked-area? renderers))
+             (all-renderers-of-type? 'area renderers))
          (if inverted-bar-plot?
              x-axis?
              y-axis?)))
@@ -215,7 +215,8 @@
 (module+ test
   (require rackunit
            syntax/parse/define
-           sawzall)
+           sawzall
+           "renderers.rkt")
   (define-simple-macro (values->list e)
     (call-with-values (thunk e) list))
   (define-check (check-infer-bounds data renderers x-bounds y-bounds)
