@@ -95,6 +95,7 @@
                     [invert? invert?]))
      (plot:rectangles (bars-data->rectangles raw-data invert?)
                       #:color (if-auto color (plot:rectangle-color))
+                      #:line-color (if-auto color (plot:rectangle-color))
                       #:alpha (if-auto alpha (plot:rectangle-alpha))
                       #:line-width (if-auto size (plot:rectangle-line-width))
                       #:style (if-auto type (plot:rectangle-style))
@@ -171,7 +172,16 @@
                     #:width (if-auto size (plot:line-width))
                     #:style (if-auto type (plot:line-style))
                     #:label (and add-legend? label))]
-    [(? legend?) empty]))
+    [(? legend?) empty]
+    [(struct* line-marker ([horizontal? horizontal?]
+                           [location loc]))
+     ((if horizontal? plot:hrule plot:vrule)
+      loc
+      #:color (if-auto color (plot:line-color))
+      #:alpha (if-auto alpha (plot:line-alpha))
+      #:width (if-auto size (plot:line-width))
+      #:style (if-auto type (plot:line-style))
+      #:label (and add-legend? (if-auto label #f)))]))
 
 (define (renderers->plot:renderer-tree data renderers
                                        #:bar-x-ticks? bar-x-ticks?
@@ -279,7 +289,8 @@
                         [min min]
                         [max max]))
      (for/list ([x (in-range min max (/ (- max min) (plot:line-samples)))])
-       (list x (f x)))]))
+       (list x (f x)))]
+    [(? line-marker?) empty]))
 
 ;; data-frame? renderer? -> data-frame?
 (define (converter-transform data a-renderer)
@@ -471,7 +482,11 @@
        (andmap (disjoin bars? stacked-bars? histogram?) renderers)))
 
 
-(struct p+l (point label))
+(struct p+l (point ; (or/c (list/c real? real?) real?)
+                   ; ^ single real is a y-value,
+                   ; means whatever the right edge of the plot is, use that for x
+             label ; string?
+             ))
 (define (renderer->rightmost-points+labels data
                                            a-renderer)
   (define renderer-raw-data (renderer->plot:data data a-renderer))
@@ -482,6 +497,12 @@
      (list (p+l (last sorted-data)
                 (if-auto (appearance-label the-appearance)
                          (renderer->y-axis-col a-renderer))))]
+    [(and (struct* line-marker ([horizontal? #t]
+                                [location y]))
+          (app (compose1 appearance-label renderer-appearance)
+               (and label (not #f))))
+     (list (p+l y (if-auto label (~a y))))]
+    [(? line-marker?) empty] ; vertical lines have no y-axis label
     [(struct* stacked-area ([group-col group-col]
                             [labels? labels?]))
      (define labels

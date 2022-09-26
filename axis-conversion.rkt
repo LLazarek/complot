@@ -3,7 +3,8 @@
 (provide x-axis->plot:axis
          y-axis->plot:axis
          axis->label
-         axis->transform+ticks)
+         axis->transform+ticks
+         infer-raw-data-bounds)
 
 (require "structs.rkt"
          "renderer-conversion.rkt"
@@ -145,9 +146,14 @@
 (define (infer-raw-data-bounds data renderers x-axis? #|otherwise y|#)
   (define (real-min/maxes vs)
     (list (apply min vs) (apply max vs)))
-  (define mins+maxes
+  (define mixed-mins+maxes
     (for/list ([renderer (in-list renderers)])
       (match (renderer->plot:data data renderer)
+        [(list x y)
+         (if x-axis?
+             (list x x)
+             (list y y))]
+        ['() (list #f #f)]
         [(list (list (? real? xs) _) ...)
          #:when x-axis?
          (real-min/maxes xs)]
@@ -172,6 +178,9 @@
         [(list (list (list _ (? real? ys-lists)) ...) ...)
          #:when (not x-axis?)
          (real-min/maxes (flatten ys-lists))])))
+  (define mins+maxes
+    (filter (match-lambda [(list #f #f) #f] [else #t])
+            mixed-mins+maxes))
   (if (empty? mins+maxes)
       (values #f #f)
       (values (apply min (map first mins+maxes))

@@ -7,6 +7,7 @@
          (struct-out y-axis)
          (struct-out legend)
          (struct-out title)
+         (struct-out line-marker)
          (struct-out renderer)
          (struct-out point-label)
          (struct-out points)
@@ -26,6 +27,8 @@
          make-y-axis
          make-legend
          make-point-label
+         make-horizontal-line
+         make-vertical-line
          make-points
          make-line
          make-bars
@@ -84,6 +87,7 @@
 ;; --- Renderer structs ---
 (struct renderer complot-printable (appearance converters))
 (struct point-label renderer (x y content anchor))
+(struct line-marker renderer (horizontal? location))
 (struct points renderer (x-col y-col group-col))
 ;; todo: a points+lines renderer, since that's almost always what I've wanted with the line renderer
 ;; In fact, that perhaps suggests it should just be an option for line: #:with-points? #t
@@ -138,7 +142,7 @@
 (define-axis-maker make-y-axis y-axis)
 
 (define (make-legend #:position [position 'auto]
-                     #:type [type 'new])
+                     #:type [type 'auto])
   (legend position type))
 
 (define-simple-macro (define-simple-renderer (id:id formals ...)
@@ -159,6 +163,13 @@
 (define-simple-renderer (make-point-label x y content
                                           #:anchor [anchor 'auto])
   (point-label x y content anchor))
+
+(define-simple-renderer (make-vertical-line x)
+  (line-marker #f x))
+
+(define-simple-renderer (make-horizontal-line y)
+  (line-marker #t y))
+
 (define-simple-renderer (make-points #:x x
                                      #:y y
                                      #:group-by [group-col #f]) ;; todo: support dot plots

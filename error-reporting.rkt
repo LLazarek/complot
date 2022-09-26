@@ -27,7 +27,8 @@
       (list (list _ (list (? real?) ...)) ...)}
      (void)]
     [{(or (? histogram?)
-          (? function?))
+          (? function?)
+          (? line-marker?))
       _}
      (void)]
     [{(? stacked-area?)
