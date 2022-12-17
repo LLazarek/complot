@@ -113,12 +113,14 @@
   (new points+line% [x-col x] [y-col y]))
 (define-simple-renderer 2 (make-bars #:x x
                                      #:y y
-                                     #:invert? [invert? #f])
-  (new bars% [x-col x] [y-col y] [invert? invert?]))
+                                     #:invert? [invert? #f]
+                                     #:bar-ordering [bar-ordering 'auto])
+  (new bars% [x-col x] [y-col y] [invert? invert?] [bar-ordering bar-ordering]))
 (define-simple-renderer 1 (make-histogram #:x x
                                           #:invert? [invert? #f]
-                                          #:bins [bins 30])
-  (new histogram% [x-col x] [invert? invert?] [bins bins]))
+                                          #:bins [bins 30]
+                                          #:bar-ordering [bar-ordering 'auto])
+  (new histogram% [x-col x] [invert? invert?] [bins bins] [bar-ordering bar-ordering]))
 
 (define-simple-macro (define-simple-3v-renderer (id:id formals ...)
                        (make-it ...))
@@ -130,6 +132,7 @@
               #:labels [labels 'auto]
 
               #:aggregate [aggregator +]
+              #:group-ordering [group-ordering 'auto]
 
               #:x-converter [x-converter #f]
               #:y-converter [y-converter #f]
@@ -143,19 +146,22 @@
              [group-aggregator aggregator]
              [x-converter x-converter]
              [y-converter y-converter]
-             [group-converter group-converter])))
+             [group-converter group-converter]
+             [group-ordering group-ordering])))
 
 (define-simple-3v-renderer (make-stacked-bars #:x x-col
                                               #:group-by group-col
                                               #:y y-col
                                               #:invert? [invert? #f]
-                                              #:auto-label? [auto-label? #t])
+                                              #:auto-label? [auto-label? #t]
+                                              #:bar-ordering [bar-ordering 'auto])
   (new stacked-bars%
        [x-col x-col]
        [y-col y-col]
        [group-col group-col]
        [invert? invert?]
-       [auto-label? auto-label?]))
+       [auto-label? auto-label?]
+       [bar-ordering bar-ordering]))
 
 (define-simple-3v-renderer (make-stacked-area #:x x-col
                                               #:group-by group-col
@@ -465,7 +471,12 @@
 (define (mixin:bar-plot c)
   (class c
     (super-new)
-    (define/override (mark-type) 'bar)))
+    (init-field [bar-ordering 'auto])
+    (define/override (mark-type) 'bar)
+    (define/public (get-bar-ordering)
+      (match bar-ordering
+        [(? procedure? f) f]
+        [else orderable<?]))))
 
 (define (mixin:new-style-legend-unsupported c)
   (class c
@@ -487,6 +498,11 @@
     (inherit-field x-col
                    y-col
                    y-converter)
+
+    (define/override (->plot-data/unchecked data)
+      (define points (super ->plot-data/unchecked data))
+      (sort points (send this get-bar-ordering) #:key first))
+
     (define/override (check-plot-data-type! plot-data)
       (match plot-data
         [(list (list _ (? real?)) ...) (void)]
@@ -587,8 +603,8 @@
   (for/stream ([v (in-list l)])
     v))
 
-(define (sort-data-by-x-col-then-groups data x-col group-col group-ordering)
-  (define sorted-by-x (reorder data x-col))
+(define (sort-data-by-x-col-then-groups data x-col group-col x-ordering group-ordering)
+  (define sorted-by-x (reorder data (cons x-col x-ordering)))
   (define grouped-by-x (group-with sorted-by-x x-col))
   (define sorted-within-x (reorder grouped-by-x (cons group-col group-ordering)))
   (ungroup sorted-within-x)
@@ -648,6 +664,7 @@
         (sort-data-by-x-col-then-groups data
                                         x-col
                                         group-col
+                                        (send this get-bar-ordering)
                                         (get-group-ordering)))
       (define group-sequence (get-groups data))
       (for/list ([x-col-group-df (in-list (split-with sorted-data x-col))])
@@ -763,9 +780,7 @@
              (define frequencies
                (samples->hash the-values))
              (define histogram-data (hash-map frequencies list))
-             (if (categorical? data x-col)
-                 histogram-data
-                 (sort histogram-data < #:key first))]
+             (sort histogram-data (send this get-bar-ordering) #:key first)]
             [else
              ;; todo: improvement, this should be able to bin based on the axis bounds?
              ;; or have a seperate argument to say the bounds of binning.
