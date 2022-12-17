@@ -59,7 +59,9 @@
     [mark-type (->m (or/c 'bar 'point 'line 'area 'other))]
     [legend-compatibility (->m (or/c 'new 'old))]
     [legend-default (->m (or/c 'new 'old))]
-    [get-color/s (->m (or/c plot:plot-color/c (listof plot:plot-color/c)))]))
+    [get-color/s (->m (or/c plot:plot-color/c
+                            (listof plot:plot-color/c)
+                            (-> natural? (listof plot:plot-color/c))))]))
 
 ;; (define legend%
 ;;   (class object%
@@ -687,8 +689,8 @@
       (define raw-data (send this ->plot-data data))
       (list
        (plot:stacked-histogram raw-data
-                               #:colors (if-auto (get-field colors this)
-                                                 (plot:stacked-histogram-colors))
+                               #:colors (send this get-color/s)
+                               #:line-colors (send this get-color/s)
                                #:alphas (if-auto (get-field alphas this)
                                                  (plot:stacked-histogram-alphas))
                                #:line-widths (if-auto (get-field size this)
